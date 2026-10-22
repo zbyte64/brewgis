@@ -55,6 +55,32 @@ def metres_per_unit(srid: int) -> float:
     return factors.pop()
 
 
+def require_workspace_srid(evaluator: MacroEvaluator | ExecutionContext) -> int:
+    """Return the model's workspace CRS: its ``local_srid`` *blueprint* variable.
+
+    Every workspace-scoped model — a scenario's analysis models, a workspace's
+    ``wsp<pk>`` input models, a layer filter's models — is blueprinted from a
+    row whose workspace names its own projected CRS (``Workspace.local_srid``),
+    and measures in that CRS. There is no fallback to the project-wide
+    ``local_srid`` variable, which only the region construction pipeline reads
+    (see :func:`require_local_srid`): a workspace's measurements are never taken
+    in another area's CRS.
+
+    *evaluator* is anything with SQLMesh's ``blueprint_var(name)`` — a macro
+    evaluator or a Python model's execution context.
+    """
+    srid = evaluator.blueprint_var("local_srid")
+    if srid is None:
+        msg = (
+            "The local_srid blueprint variable is not set; a workspace-scoped model "
+            "has no workspace CRS to measure in."
+        )
+        raise ValueError(msg)
+    # A SQL model's macro evaluator hands blueprint values over as the sqlglot
+    # literal they were rendered to; a Python model's context as the value.
+    return int(getattr(srid, "name", srid))
+
+
 def require_local_srid(evaluator: MacroEvaluator | ExecutionContext) -> int:
     """Return the ``local_srid`` variable, refusing to guess a CRS when it is unset.
 

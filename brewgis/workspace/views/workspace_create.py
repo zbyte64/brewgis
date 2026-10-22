@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import Any
 
@@ -19,10 +18,11 @@ from django.utils.text import slugify
 from django.views.generic.edit import FormView
 
 from brewgis.workspace.built_forms.default_library import seed_default_built_forms
+from brewgis.workspace.models import LOCAL_SRID_HELP_TEXT
 from brewgis.workspace.models import County
-from brewgis.workspace.models import Scenario
-from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.models import validate_projected_srid
+from brewgis.workspace.services.workspace_base import create_base_scenario
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,12 @@ class WorkspaceCreateForm(forms.Form):
 
     name = forms.CharField(max_length=128, required=True)
     description = forms.CharField(widget=forms.Textarea, required=False)
+    local_srid = forms.IntegerField(
+        label="Projected CRS (EPSG code)",
+        min_value=1,
+        validators=[validate_projected_srid],
+        help_text=LOCAL_SRID_HELP_TEXT,
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -122,26 +128,12 @@ class WorkspaceCreateView(FormView):
             name=name,
             db_schema=slugify(name),
             county_fips_list=county_fips,
+            local_srid=form.cleaned_data["local_srid"],
         )
         seed_default_built_forms(workspace)
-        self._create_default_scenario(workspace)
+        create_base_scenario(workspace)
         return redirect(
             reverse("workspace:workspace_detail", kwargs={"pk": workspace.pk})
-        )
-
-    def _create_default_scenario(self, workspace: Workspace) -> None:
-        """Give every new workspace a base scenario to paint against.
-
-        BASE scenarios have no canvas view — they resolve straight to
-        ``workspace.base_table`` via ``Scenario.base_layer_source()``.
-        """
-        today = datetime.date.today()  # noqa: DTZ011
-        Scenario.objects.create(
-            workspace=workspace,
-            name="Base Scenario",
-            scenario_type=ScenarioType.BASE,
-            base_year=today.year,
-            horizon_year=today.year + 20,
         )
 
 

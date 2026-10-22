@@ -12,7 +12,7 @@ models do the work:
   conditions alike, compiled by ``services.filter_compiler``).
 * ``models/spatial_filter/spatial_filter_source.py`` — one model per *filter
   source* table (the other layer a spatial condition reads), copying its rows
-  with the geometry projected into the region's local CRS under a fixed name and
+  with the geometry projected into the filtering workspace's CRS under a fixed name and
   a GiST index on it.
 
 Two models, not one, because a spatial join has to be index-driven. A filter
@@ -103,29 +103,32 @@ def filter_model_table(filter_pk: int) -> str:
 def filter_model_fqn(filter_pk: int) -> str:
     """SQLMesh's name for *filter_pk*'s filtered-layer model.
 
-    Mirrors ``views.base_canvas._fill_model_fqn``: the identifier parts are
+    Mirrors ``services.workspace_base.fill_model_fqn``: the identifier parts are
     double-quoted so the FQN survives selector parsing.
     """
     return f'brewgis."{SPATIAL_FILTER_SCHEMA}"."{filter_model_table(filter_pk)}"'
 
 
-def filter_source_model_table(schema: str, table: str, geometry: str) -> str:
+def filter_source_model_table(schema: str, table: str, geometry: str, srid: int) -> str:
     """Return the bare table name of the projection model for a filter source.
 
-    Keyed on the source's identity (schema, table and geometry column), so two
-    filters reading the same table share one projection — and so the name is
-    stable across plans, which is what lets SQLMesh reuse the built table
-    instead of rebuilding it every time a filter is applied.
+    Keyed on the source's identity (schema, table and geometry column) and the
+    CRS it is projected into — the CRS of the filtering layer's workspace
+    (``Workspace.local_srid``) — so two filters reading the same table in the
+    same CRS share one projection, two workspaces with different CRSs each get
+    theirs, and the name is stable across plans, which is what lets SQLMesh
+    reuse the built table instead of rebuilding it every time a filter is
+    applied.
     """
-    digest = hashlib.sha256(f"{schema}.{table}.{geometry}".encode()).hexdigest()
+    digest = hashlib.sha256(f"{schema}.{table}.{geometry}.{srid}".encode()).hexdigest()
     return f"src_{digest[:_DIGEST_LENGTH]}"
 
 
-def filter_source_model_fqn(schema: str, table: str, geometry: str) -> str:
+def filter_source_model_fqn(schema: str, table: str, geometry: str, srid: int) -> str:
     """SQLMesh's name for a filter source's projection model."""
     return (
         f'brewgis."{SPATIAL_FILTER_SCHEMA}"."'
-        f'{filter_source_model_table(schema, table, geometry)}"'
+        f'{filter_source_model_table(schema, table, geometry, srid)}"'
     )
 
 
@@ -179,36 +182,43 @@ def applied_filters() -> list[LayerFilter]:
     )
 
 
-def all_filter_sources() -> list[tuple[str, str, str]]:
-    """``(schema, table, geometry)`` a projection model is needed for, deduplicated."""
-    sources: dict[tuple[str, str, str], None] = {}
+def filter_srid(flt: LayerFilter) -> int:
+    """The CRS *flt* is evaluated in: its layer's workspace's ``local_srid``."""
+    return int(flt.layer.workspace.local_srid)
+
+
+def all_filter_sources() -> list[tuple[str, str, str, int]]:
+    """``(schema, table, geometry, srid)`` a projection model is needed for, deduplicated."""
+    sources: dict[tuple[str, str, str, int], None] = {}
     for flt in applied_filters():
+        srid = filter_srid(flt)
         for source in filter_sources(flt.filter_json):
-            sources[source] = None
+            sources[(*source, srid)] = None
     return list(sources)
 
 
-def with_filter_refs(node: Any, resolved: set[str]) -> Any | None:
+def with_filter_refs(node: Any, resolved: set[str], srid: int) -> Any | None:
     """Return a copy of *node* whose ``spatial`` nodes name their projection model.
 
-    *resolved* is the set of projection tables the blueprints define. ``None``
-    when any spatial condition reads a source without one — a model over it
-    could only fail the plan. The stored ``filter_json`` is never modified: the
-    editor and the preview compiler read it too.
+    *resolved* is the set of projection tables the blueprints define and *srid*
+    the CRS the filter is evaluated in, which picks the projection of each source
+    in that CRS. ``None`` when any spatial condition reads a source without one —
+    a model over it could only fail the plan. The stored ``filter_json`` is
+    never modified: the editor and the preview compiler read it too.
     """
     if not isinstance(node, dict):
         return node
     if node.get("type") == SPATIAL_NODE_TYPE:
         source = filter_source_of_node(node)
-        if source is None or filter_source_model_table(*source) not in resolved:
+        if source is None or filter_source_model_table(*source, srid) not in resolved:
             return None
-        return {**node, FILTER_REF_KEY: filter_source_model_fqn(*source)}
+        return {**node, FILTER_REF_KEY: filter_source_model_fqn(*source, srid)}
     children = node.get("children")
     if not isinstance(children, list):
         return node
     resolved_children = []
     for child in children:
-        resolved_child = with_filter_refs(child, resolved)
+        resolved_child = with_filter_refs(child, resolved, srid)
         if resolved_child is None:
             return None
         resolved_children.append(resolved_child)
@@ -394,7 +404,7 @@ def refresh_filter_models(flt: LayerFilter | None = None) -> None:
         select=[
             filter_model_fqn(flt.pk),
             *(
-                filter_source_model_fqn(*source)
+                filter_source_model_fqn(*source, filter_srid(flt))
                 for source in filter_sources(flt.filter_json)
             ),
         ],

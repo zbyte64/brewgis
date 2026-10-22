@@ -1,5 +1,5 @@
 MODEL (
-  name duckdb.@{region}.overture_road_subsegments,
+  name duckdb.@{workspace_schema}.road_subsegments,
   kind VIEW,
   description 'One row per consecutive Overture connector pair of each drivable transport segment, flattened from the segment connectors array; the raw edge list for the road graph.',
   column_descriptions (
@@ -12,7 +12,7 @@ MODEL (
   ),
   gateway duckdb,
   dialect duckdb,
-  blueprints @region_blueprints()
+  blueprints @workspace_blueprints('fetched_public_data')
 );
 
 -- The road graph's raw edge list: Overture `type=segment` carries the
@@ -30,15 +30,15 @@ MODEL (
 -- carry no connectivity and never lie on a shortest path.
 --
 -- Row-group filter pushdown on the bbox struct column, as in
--- `overture_transport`: only region-relevant row groups are fetched from S3.
+-- `overture_transport`: only the row groups overlapping the workspace extent are fetched from S3.
 
 WITH seg AS (
     SELECT id, geometry, connectors
-    FROM read_parquet(@overture_transport_parquet_glob)
-    WHERE bbox.xmin < @overture_bbox_max_x
-      AND bbox.xmax > @overture_bbox_min_x
-      AND bbox.ymin < @overture_bbox_max_y
-      AND bbox.ymax > @overture_bbox_min_y
+    FROM read_parquet(@overture_workspace_transport_parquet_glob)
+    WHERE bbox.xmin < @extent_max_x
+      AND bbox.xmax > @extent_min_x
+      AND bbox.ymin < @extent_max_y
+      AND bbox.ymax > @extent_min_y
       AND class IN ('motorway', 'trunk', 'primary', 'secondary', 'tertiary',
                     'residential', 'living_street', 'unclassified', 'service')
       AND len(connectors) >= 2

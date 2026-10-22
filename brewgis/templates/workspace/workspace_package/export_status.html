@@ -1,0 +1,37 @@
+{% load i18n workspace_tags %}
+
+{% comment %}
+  One workspace package export, as a row of the hub's "Workspace Package" list.
+  Polls itself while the Celery task writes the package.
+{% endcomment %}
+{% partialdef export-status %}
+<li id="workspace-export-{{ export.pk }}"
+    class="list-group-item d-flex justify-content-between align-items-center"
+    {% if export.status == "pending" or export.status == "running" %}hx-get="{% url 'workspace:workspace_export_status' workspace.pk export.pk %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div>
+    <strong>{{ export.created_at|date:"M j, Y H:i" }}</strong>
+    {% if export.include_public_data %}
+      <span class="text-muted small ms-2">{% translate "with food outlets and road network" %}</span>
+    {% endif %}
+    {% if export.status == "failed" and export.error_log %}
+      <div class="text-danger small">{{ export.error_log|truncatechars:200 }}</div>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% with badge_class=export.status|analysis_status_badge %}
+      <span class="badge bg-{{ badge_class }}">{{ export.get_status_display }}</span>
+    {% endwith %}
+    {% if export.status == "completed" %}
+      <a class="btn btn-sm btn-outline-primary"
+         href="{% url 'workspace:workspace_export_download' workspace.pk export.pk %}">{% translate "Download" %}</a>
+    {% endif %}
+    {% if export.status == "completed" or export.status == "failed" %}
+      <button type="button"
+              class="btn btn-sm btn-outline-danger"
+              hx-post="{% url 'workspace:workspace_export_delete' workspace.pk export.pk %}"
+              hx-target="#workspace-export-{{ export.pk }}"
+              hx-swap="outerHTML">{% translate "Delete" %}</button>
+    {% endif %}
+  </div>
+</li>
+{% endpartialdef %}

@@ -56,7 +56,9 @@ class TestMergeModule(TestCase):
         cls.client_obj = Client()
         cls.client_obj.force_login(cls.user)
 
-        cls.workspace = Workspace.objects.create(name="Test Merge Workspace")
+        cls.workspace = Workspace.objects.create(
+            local_srid=3310, name="Test Merge Workspace"
+        )
         cls.source = Scenario.objects.create(
             workspace=cls.workspace,
             name="Source Scenario",

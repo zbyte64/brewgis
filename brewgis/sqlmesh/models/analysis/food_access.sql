@@ -23,7 +23,7 @@ MODEL (
 --
 --   mRFEI = healthy / (healthy + unhealthy) * 100
 --
--- The outlets are the region's Overpass fetch (``osm/food_pois_local.sql``),
+-- The outlets are the workspace's (``workspace_inputs/food_pois_local.sql``),
 -- projected to the local CRS and indexed there, which is what lets the 1 km
 -- radius be a constant against a GiST index rather than a per-pair geography
 -- computation. The parcel side is projected in the join: the analysis reads the
@@ -34,14 +34,14 @@ MODEL (
 -- the ``food_desert`` flag read null as unknown rather than as worst case.
 
 WITH parcels AS (
-    -- The scenario end state is EPSG:4326; the outlets are in local_srid, which
+    -- The scenario end state is EPSG:4326; the outlets are in the workspace CRS, which
     -- is where the 1 km radius is a plain index-usable constant. The transform is
     -- pre-computed here rather than in the join: PostgreSQL keeps the GiST
     -- pushdown on the outlet geometry either way, but a transform inside a join
     -- condition is what the SQLMesh linter's notransforminjoinwhere flags.
     SELECT
         parcel_id,
-        ST_Transform(geometry, @local_srid()) AS local_geometry
+        ST_Transform(geometry, @workspace_srid()) AS local_geometry
     FROM @{scenario_schema}.core_end_state
 ),
 
@@ -51,11 +51,11 @@ counts AS (
         COUNT(*) FILTER (WHERE fp.is_healthy) AS healthy_count,
         COUNT(*) FILTER (WHERE fp.is_unhealthy) AS unhealthy_count
     FROM parcels AS p
-    JOIN brewgis.@{public_data_region}.food_pois_local AS fp
+    JOIN brewgis.@{workspace_schema}.food_pois_local AS fp
         ON ST_DWithin(
             p.local_geometry,
             fp.geometry,
-            @metres_in_local_units(1000.0)
+            @metres_in_workspace_units(1000.0)
         )
     GROUP BY p.parcel_id
 ),

@@ -19,7 +19,7 @@ Two sets of models, from one traversal of the applied filters:
 
 The projection is what makes a spatial condition index-driven: ``filter_ref`` is
 a filter source's projection model, whose geometry column is already in the
-region's local CRS behind a GiST index, so the filter's ``EXISTS`` probe is an
+workspace's CRS behind a GiST index, so the filter's ``EXISTS`` probe is an
 index probe instead of a per-row scan of a view. The stored ``filter_json``
 itself never carries it, because the editor and the preview compiler read the
 same tree.
@@ -60,7 +60,7 @@ MODEL_SCHEMA = "spatial_filter"
 
 
 def _source_profiles(
-    sources: list[tuple[str, str, str]],
+    sources: list[tuple[str, str, str, int]],
     *,
     skipped: list[str],
 ) -> list[dict[str, object]]:
@@ -76,7 +76,7 @@ def _source_profiles(
     from brewgis.workspace.services.spatial_filter import table_ref
 
     profiles: list[dict[str, object]] = []
-    for schema, table, _ in sources:
+    for schema, table, _, srid in sources:
         geometry = registered_geometry_column(schema, table)
         columns = _fetch_base_columns(f"{schema}.{table}")[2]
         if geometry is None or not columns:
@@ -89,11 +89,13 @@ def _source_profiles(
                 # spell their blueprint variable differently or the two files
                 # collide on `brewgis.spatial_filter.@{...}` before expansion.
                 "source_model_table": filter_source_model_table(
-                    schema, table, geometry
+                    schema, table, geometry, srid
                 ),
                 "source_ref": table_ref(schema, table),
                 "source_geom": geometry,
                 "all_columns": columns,
+                # The CRS the projection is in: the filtering workspace's.
+                "local_srid": srid,
             }
         )
     return profiles
@@ -145,6 +147,7 @@ def spatial_filter_profiles() -> list[dict[str, object]]:
     from brewgis.workspace.services.canvas_view_manager import _fetch_base_columns
     from brewgis.workspace.services.spatial_filter import applied_filters
     from brewgis.workspace.services.spatial_filter import filter_model_table
+    from brewgis.workspace.services.spatial_filter import filter_srid
     from brewgis.workspace.services.spatial_filter import geometry_column
     from brewgis.workspace.services.spatial_filter import table_ref
     from brewgis.workspace.services.spatial_filter import with_filter_refs
@@ -158,7 +161,8 @@ def spatial_filter_profiles() -> list[dict[str, object]]:
     for flt in applied_filters():
         schema, table = flt.layer.source_table()
         columns = _fetch_base_columns(f"{schema}.{table}")[2]
-        tree = with_filter_refs(flt.filter_json, resolved)
+        srid = filter_srid(flt)
+        tree = with_filter_refs(flt.filter_json, resolved, srid)
         if not columns or tree is None:
             skipped.append(f"{flt.pk} ({schema}.{table})")
             continue
@@ -169,6 +173,8 @@ def spatial_filter_profiles() -> list[dict[str, object]]:
                 "all_columns": columns,
                 "source_geom": geometry_column(schema, table),
                 "filter_json": tree,
+                # The CRS the filter is evaluated in: its layer's workspace's.
+                "local_srid": srid,
             }
         )
     if skipped:

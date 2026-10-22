@@ -6,7 +6,7 @@ MODEL (
     parcel_id = 'Assessor parcel number (APN) of the parcel.',
     geometry = 'Parcel boundary geometry (EPSG:4326).',
     area_gross_acres = 'Gross parcel area (acres).',
-    constraint_acres = 'Parcel acres excluded from development by the region''s constraint layers (overlapping layers counted once), each discounted by its layer share and capped at the gross area (acres).',
+    constraint_acres = 'Parcel acres excluded from development by the workspace''s constraint layers (overlapping layers counted once), each discounted by its layer share and capped at the gross area (acres).',
     acres_developable = 'Gross area less the constraint acres: the acreage a scenario may develop (acres).',
     developable_proportion = 'Developable share of the gross area (0-1); zero without area.'
   ),
@@ -21,16 +21,17 @@ MODEL (
 
 -- Environmental constraint — the acreage each parcel loses to constrained land.
 --
--- Reads the constraint polygons of the workspace's region
--- (``brewgis.@{region}.constraint_layers`` — ``region`` is resolved from the
--- workspace's base table by macros/analysis_blueprints.py) and reports, per
--- parcel, the part of it they cover, each layer discounted by its own
--- ``discount_pct``. ``acres_developable`` is the gross area less that coverage
--- — the acreage the allocation step may build on. Which layers a region
--- constrains, and by how much, is decided in that region's model
--- (constraints/constraint_layers.sql for a region data pipeline,
--- sacog_v1/constraint_layers.sql for the SACOG snapshot); a reference to it is a lineage
--- dependency, so planning this model builds the layers too.
+-- Reads the constraint polygons of the scenario's workspace
+-- (``brewgis.@{workspace_schema}.constraint_layers`` — see
+-- macros/workspace_blueprints.py) and reports, per parcel, the part of it they
+-- cover, each layer discounted by its own ``discount_pct``.
+-- ``acres_developable`` is the gross area less that coverage — the acreage the
+-- allocation step may build on. Which layers a workspace constrains, and by how
+-- much, is decided by its ``constraint_source``: public FEMA/NWI layers over its
+-- extent (workspace_inputs/constraint_layers_public.sql) or the layers its
+-- package shipped (workspace_inputs/constraint_layers_package.sql); a reference
+-- to the model is a lineage dependency, so planning this model builds the
+-- layers too.
 --
 -- It runs against whatever parcels the scenario's canvas holds, so a *base*
 -- scenario reports the existing constrained acreage (streams and wetlands do
@@ -59,14 +60,14 @@ MODEL (
 --   * Overlaps are tested in EPSG:4326 (the constraint layers' ``geom`` and the
 --     canvas's own CRS, so the predicate is index-driven) and *measured* in
 --     ``local_srid`` (the layers' ``local_geom``, made valid in that CRS): a
---     geographic CRS has no planar area. The region's layers are
+--     geographic CRS has no planar area. The workspace's layers are
 --     pre-subdivided, so each outer polygon probes a small box.
 --   * The pieces are **unioned per (parcel, discount)**, so land covered by two
 --     constraint layers is counted once: a parcel cannot lose more acres than
 --     it has. Summing the raw intersections instead double-counts every
 --     cross-layer overlap — on the SACOG canvas that reported 40 parcels
 --     losing more acreage than they own, the worst by 3.3 acres. Layers with
---     different discounts are unioned in their own group (a region's layers
+--     different discounts are unioned in their own group (a workspace's layers
 --     carry no priority between them), and the total is capped at the gross
 --     area for the same reason.
 --   * Constraint slivers below ``@constraint_min_overlap_sqm()`` m2 are dropped
@@ -79,11 +80,11 @@ WITH hits AS (
         h.parcel_id,
         q.discount_pct,
         ST_Area(ST_Union(h.piece_local)) AS overlap_sqm
-    FROM brewgis.@{region}.constraint_layers AS q
+    FROM brewgis.@{workspace_schema}.constraint_layers AS q
     JOIN LATERAL (
         SELECT
             p.parcel_id,
-            ST_Intersection(q.local_geom, ST_Transform(p.geometry, @local_srid()))
+            ST_Intersection(q.local_geom, ST_Transform(p.geometry, @workspace_srid()))
                 AS piece_local
         FROM @ref_model(@parcel_table) AS p
         WHERE ST_Intersects(q.geom, p.geometry)
@@ -117,7 +118,7 @@ FROM (
     SELECT
         p.parcel_id,
         p.geometry,
-        @st_area_projected(p.geometry) AS area_gross_acres,
+        @workspace_area_acres(p.geometry) AS area_gross_acres,
         COALESCE(o.constraint_acres, 0.0) AS constraint_acres
     FROM @ref_model(@parcel_table) AS p
     LEFT JOIN constraint_overlap AS o

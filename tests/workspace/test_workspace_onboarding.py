@@ -274,6 +274,7 @@ class TestWorkspaceCreateView(TestCase):
             url,
             {
                 "name": "Fresno Analysis",
+                "local_srid": 3310,
                 "description": "Testing workspace creation",
                 "state_fips": "06",
                 "county_fips": ["019", "031"],
@@ -286,6 +287,23 @@ class TestWorkspaceCreateView(TestCase):
             {"state": "06", "county": "019"},
             {"state": "06", "county": "031"},
         ]
+        assert ws.local_srid == 3310
+
+    def test_post_with_a_geographic_crs_is_refused(self) -> None:
+        """Distances and areas are measured in the workspace CRS: degrees can't be."""
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("workspace:workspace_create"),
+            {
+                "name": "Degrees",
+                "local_srid": 4326,
+                "state_fips": "06",
+                "county_fips": ["019"],
+            },
+        )
+        assert response.status_code == 200
+        assert b"not a projected CRS" in response.content
+        assert not Workspace.objects.filter(name="Degrees").exists()
 
     def test_post_redirects_to_detail(self) -> None:
         """POST should redirect to workspace detail."""
@@ -295,6 +313,7 @@ class TestWorkspaceCreateView(TestCase):
             url,
             {
                 "name": "Test Workspace",
+                "local_srid": 3310,
                 "state_fips": "06",
                 "county_fips": ["019"],
             },
@@ -328,6 +347,7 @@ class TestWorkspaceCreateView(TestCase):
             url,
             {
                 "name": "Fresno Analysis",
+                "local_srid": 3310,
                 "state_fips": "06",
             },
         )

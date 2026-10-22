@@ -12,7 +12,7 @@ The whole tree is compiled to one ``WHERE`` predicate
 spatial conditions alike. Each spatial condition's filter side is a
 *projection* model (``models/spatial_filter/spatial_filter_source.py``), not the
 raw other-layer table: the projection carries the other table's geometry in the
-region's local CRS behind a GiST index, which is what keeps the ``EXISTS`` an
+workspace's CRS behind a GiST index, which is what keeps the ``EXISTS`` an
 index probe per row instead of a scan of a view (often not indexable at all).
 The projection is named in the profile by
 ``services.spatial_filter.FILTER_REF_KEY``, so the stored ``filter_json`` — which
@@ -37,22 +37,22 @@ from sqlmesh.core.model.definition import ModelKindName
 
 from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
-from brewgis.sqlmesh.macros.geometry import require_local_srid
+from brewgis.sqlmesh.macros.geometry import require_workspace_srid
 from brewgis.sqlmesh.macros.spatial_filter_blueprints import MODEL_SCHEMA
 from brewgis.sqlmesh.macros.spatial_filter_blueprints import spatial_filter_profiles
 
 if TYPE_CHECKING:
     from sqlmesh.core.macros import MacroEvaluator
 
-# ``metres_per_unit``/``require_local_srid`` are imported at *module* level, not
+# ``metres_per_unit``/``require_workspace_srid`` are imported at *module* level, not
 # inside ``execute`` as the other lazy imports are. SQLMesh decides which config
 # variables a Python model's render context carries by statically parsing the
 # entrypoint and the functions in its ``python_env`` (``parse_dependencies``) —
-# and ``local_srid`` is only discovered by walking
-# ``require_local_srid``'s own ``evaluator.var("local_srid")`` call. A
+# and the ``local_srid`` blueprint variable is only discovered by walking
+# ``require_workspace_srid``'s own ``evaluator.blueprint_var("local_srid")`` call. A
 # function-local import keeps that function out of ``python_env``, so the render
 # that evaluates the DDL's ``@execute()`` gets a context without the variable and
-# the project stops loading with "The local_srid variable is not set" (the same
+# the project stops loading with "The local_srid blueprint variable is not set" (the same
 # reason ``models/adapters/assessor_parcels.py`` imports both at module level).
 
 # Resolved when SQLMesh imports this module (i.e. while loading the project) —
@@ -111,7 +111,7 @@ def execute(evaluator: MacroEvaluator, **kwargs: Any) -> str:
     raw_columns = evaluator.blueprint_var("all_columns", []) or []
     filter_json = evaluator.blueprint_var("filter_json", {}) or {}
 
-    local_srid = require_local_srid(evaluator)
+    local_srid = require_workspace_srid(evaluator)
     where = FilterCompiler().compile(
         filter_json,
         source_geom=source_geom,

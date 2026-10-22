@@ -10,7 +10,7 @@ here, so no launcher can accept a configuration another would refuse, store it
 differently, or execute it differently.
 
 Parameters are the only input a launch carries. What data a module reads —
-the parcel source, the built forms, the region's constraint layers, road
+the parcel source, the built forms, the workspace's constraint layers, road
 network and reference trip lengths — is resolved by the blueprints from the
 Workspace and Scenario rows and built by SQLMesh as lineage dependencies, so
 there is no table or column for a launcher to name.
@@ -25,10 +25,9 @@ from brewgis.workspace.analysis.data_export import ensure_export_exists_isolated
 from brewgis.workspace.analysis.module_registry import ANALYSIS_PARAMETERS
 from brewgis.workspace.analysis.module_registry import resolve_module_order
 from brewgis.workspace.analysis.pipeline import launch_analysis_run
-from brewgis.workspace.services.fetch_clone import WorkspaceRegionError
-from brewgis.workspace.services.fetch_clone import workspace_region
 from brewgis.workspace.services.preflight import PreflightError
 from brewgis.workspace.services.preflight import check_analysis_prerequisites
+from brewgis.workspace.services.workspace_extent import workspace_inputs_error
 
 if TYPE_CHECKING:
     from brewgis.workspace.models import AnalysisRun
@@ -100,10 +99,10 @@ def scenario_analysis_errors(scenario: Scenario) -> list[PreflightError]:
     workspace (see ``sqlmesh/macros/analysis_blueprints.py``), so those derived
     inputs are what a launch is validated against:
 
-    - the workspace's region (``fetch_clone.workspace_region``): a workspace
-      whose base table is in no region schema has no constraint layers,
-      trip-length zones or road network, gets no analysis models, and is
-      reported as not configured for analysis — no region is substituted;
+    - the workspace's analysis inputs (``workspace_extent.workspace_inputs_error``):
+      a workspace without an extent has no constraint layers, trip-length
+      zones or road network, gets no analysis models, and is reported as not
+      configured for analysis — no area is substituted;
 
     - the scenario's own parcel source: its canvas view for an ALTERNATIVE
       scenario (base canvas + painted edits), the workspace's base canvas
@@ -119,10 +118,9 @@ def scenario_analysis_errors(scenario: Scenario) -> list[PreflightError]:
     run the plan — it can't see this table until it's actually committed.
     """
     workspace = scenario.workspace
-    try:
-        workspace_region(workspace)
-    except WorkspaceRegionError as error:
-        return [PreflightError(field="base_table", message=str(error))]
+    inputs_error = workspace_inputs_error(workspace)
+    if inputs_error is not None:
+        return [PreflightError(field="base_table", message=inputs_error)]
     ensure_export_exists_isolated(
         workspace, schema=workspace.db_schema, table=BUILT_FORMS_TABLE
     )

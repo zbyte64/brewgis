@@ -365,6 +365,12 @@ GIS_FILE_EXTENSIONS = env.list(
 
 # Maximum upload file size in bytes (default: 100 MB).
 MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=100 * 1024 * 1024)
+# Maximum workspace package upload (services/workspace_package.py). A region's
+# base layer alone is ~160 MB of GeoParquet (SACOG, 500k parcels); its public
+# data roughly doubles that. Default: 2 GB.
+MAX_WORKSPACE_PACKAGE_SIZE = env.int(
+    "MAX_WORKSPACE_PACKAGE_SIZE", default=2 * 1024 * 1024 * 1024
+)
 
 DATA_DOWNLOAD_CACHE_DIR = BASE_DIR / "planning"
 

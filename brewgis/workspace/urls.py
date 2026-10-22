@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import CreateLayerView
 from .views import ImportSqlmeshLayerView
+from .views import ImportWorkspacePackageView
 from .views import RasterUploadView
 from .views import ReadGISFileView
 from .views import SelectBaseCanvasView
@@ -66,6 +67,11 @@ from .views import undo_paint
 from .views import view_workspace_map
 from .views import workspace_create
 from .views import workspace_detail
+from .views import workspace_export_create
+from .views import workspace_export_delete
+from .views import workspace_export_download
+from .views import workspace_export_status
+from .views import workspace_package_rebuild
 from .views import workspace_settings_update
 from .views.basemaps import basemap_list
 from .views.basemaps import basemap_select
@@ -147,6 +153,33 @@ urlpatterns = [
         "<int:pk>/settings/",
         workspace_settings_update,
         name="workspace_settings_update",
+    ),
+    # Workspace packages (services/workspace_package.py)
+    path("<int:pk>/exports/", workspace_export_create, name="workspace_export_create"),
+    path(
+        "<int:pk>/exports/<int:export_pk>/",
+        workspace_export_status,
+        name="workspace_export_status",
+    ),
+    path(
+        "<int:pk>/exports/<int:export_pk>/download/",
+        workspace_export_download,
+        name="workspace_export_download",
+    ),
+    path(
+        "<int:pk>/exports/<int:export_pk>/delete/",
+        workspace_export_delete,
+        name="workspace_export_delete",
+    ),
+    path(
+        "<int:pk>/package/rebuild/",
+        workspace_package_rebuild,
+        name="workspace_package_rebuild",
+    ),
+    path(
+        "import/package/",
+        ImportWorkspacePackageView.as_view(),
+        name="import_workspace_package",
     ),
     # Scenario Management
     path(

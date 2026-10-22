@@ -21,7 +21,7 @@ are one O(N^2) computation per scenario, distributed in origin batches so a
 213k-parcel scenario stays inside a few hundred MB (see ``_BATCH_ELEMENTS``).
 
 Distance source is, by default, the Euclidian centroid distance, taken in the
-region's projected CRS (``local_srid``) and scaled by that CRS's own
+workspace's projected CRS (``Workspace.local_srid``) and scaled by that CRS's own
 metres-per-unit (:func:`brewgis.sqlmesh.macros.geometry.metres_per_unit`), so
 ``avg_trip_length_km`` is kilometres whatever the projection's linear unit and
 the models that scale by it (vmt, physical_activity) are in the units they
@@ -51,7 +51,7 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
-from brewgis.sqlmesh.macros.geometry import require_local_srid
+from brewgis.sqlmesh.macros.geometry import require_workspace_srid
 from brewgis.sqlmesh.models.python._gravity_model import _gravity_model
 from brewgis.sqlmesh.models.python._network_zones import zone_distance_matrix
 from brewgis.sqlmesh.models.python._network_zones import zone_indices
@@ -169,12 +169,12 @@ def execute(
         f"brewgis.{context.blueprint_var('scenario_schema')}.network_zone_distance"
     )
     # A scenario's geometry is EPSG:4326, so its coordinates are *degrees*:
-    # distances are taken in the region's projected ``local_srid`` instead, whose
+    # distances are taken in the workspace's projected CRS instead, whose
     # linear unit is whatever that CRS defines (metres, US survey feet, ...).
     # Scaling by the CRS's own metres-per-unit gives the kilometres
     # ``avg_trip_length_km`` promises its consumers (vmt and physical_activity
     # both scale by it).
-    projected_srid = require_local_srid(context)
+    projected_srid = require_workspace_srid(context)
     km_per_unit = metres_per_unit(projected_srid) / 1000.0
 
     parcels = context.fetchdf(

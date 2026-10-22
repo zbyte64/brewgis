@@ -79,7 +79,7 @@ class FilterCompiler:
         """Compile *filter_json* to a SQL predicate over the rows aliased ``src``.
 
         *source_geom* is the filtered layer's geometry column; *local_srid* and
-        *mpu* (``macros.geometry.metres_per_unit``) are the region's projection
+        *mpu* (``macros.geometry.metres_per_unit``) are the workspace's projection
         and its metres-per-unit factor, used by spatial conditions. Every
         ``spatial`` node must carry its resolved projection model
         (``services.spatial_filter.FILTER_REF_KEY``).

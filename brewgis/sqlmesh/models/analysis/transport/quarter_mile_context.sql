@@ -29,7 +29,7 @@ MODEL (
 -- trip_distribution).
 --
 -- The join is on centroid_local, the projected, GiST-indexed point
--- core_end_state carries, and the radius is expressed in the region's local
+-- core_end_state carries, and the radius is expressed in the workspace CRS's
 -- unit (see the AGENTS local-unit rule): a constant radius in the indexed
 -- column's own CRS is what lets the planner use the index.
 --
@@ -72,7 +72,7 @@ WITH quarter_mile AS (
         ) AS qmb_mixed_acres
     FROM @{scenario_schema}.core_end_state AS a
     JOIN @{scenario_schema}.core_end_state AS b
-        ON ST_DWithin(a.centroid_local, b.centroid_local, @metres_in_local_units(403.0))
+        ON ST_DWithin(a.centroid_local, b.centroid_local, @metres_in_workspace_units(403.0))
     GROUP BY a.parcel_id
 ),
 
@@ -82,7 +82,7 @@ one_mile AS (
         SUM(COALESCE(b.emp, 0.0)) AS emp_1mile
     FROM @{scenario_schema}.core_end_state AS a
     JOIN @{scenario_schema}.core_end_state AS b
-        ON ST_DWithin(a.centroid_local, b.centroid_local, @metres_in_local_units(1609.0))
+        ON ST_DWithin(a.centroid_local, b.centroid_local, @metres_in_workspace_units(1609.0))
     GROUP BY a.parcel_id
 )
 

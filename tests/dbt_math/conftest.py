@@ -11,6 +11,7 @@ scenario cannot load the project — hence this fixture.
 from __future__ import annotations
 
 import pytest
+from django.contrib.gis.geos import Polygon
 from django.db import connection
 
 from brewgis.workspace.models import ScenarioType
@@ -74,7 +75,13 @@ def parity_scenario(sqlmesh_test_database, django_db_blocker) -> str:
         ScenarioFactory(
             workspace=canvas_workspace, scenario_type=ScenarioType.ALTERNATIVE
         )
-        workspace = WorkspaceFactory(base_table="fresno.base_canvas_reconciled")
+        # An extent gives the workspace its analysis input models (constraint
+        # layers, trip-length zones, food outlets, road network), which every
+        # analysis model of the scenario reads.
+        workspace = WorkspaceFactory(
+            base_table="fresno.base_canvas_reconciled",
+            extent=Polygon.from_bbox((-119.95, 36.6, -119.55, 36.92)),
+        )
         scenario = ScenarioFactory(workspace=workspace)
         AnalysisRunFactory(workspace=workspace, scenario=scenario)
         connection.commit()

@@ -1,7 +1,7 @@
 MODEL (
-  name brewgis.@{region}.food_pois_raw,
+  name brewgis.@{workspace_schema}.food_pois_fetch_raw,
   kind FULL,
-  description 'OpenStreetMap food outlets for the region fetched from the Overpass API by DuckDB and materialized in PostGIS, one point per OSM node or way, classified healthy or unhealthy for the food-access mRFEI.',
+  description 'OpenStreetMap food outlets over the workspace extent fetched from the Overpass API by DuckDB and materialized in PostGIS, one point per OSM node or way, classified healthy or unhealthy for the food-access mRFEI.',
   column_descriptions (
     osm_id = 'OpenStreetMap element id within its element type.',
     name = 'Element name tag, empty string when the element is unnamed.',
@@ -23,21 +23,23 @@ MODEL (
     food_class VARCHAR,
     geometry GEOMETRY
   ),
-  blueprints @region_blueprints()
+  blueprints @workspace_blueprints('fetched_public_data')
 );
 
--- NOTE: Audits intentionally omitted (gateway duckdb); the region's
+-- NOTE: Audits intentionally omitted (gateway duckdb); the workspace's
 -- food_pois_local audits the row count that reaches the analysis.
 
--- Overpass food outlets for the region — the fetch the food-access analysis
--- counts from, separate from the POI import's taxonomy-driven
--- ``brewgis.osm.poi_raw``: this asks for exactly the tags the mRFEI splits on.
+-- Overpass food outlets over the workspace extent — the fetch the food-access
+-- analysis counts from for a workspace whose ``public_data_source`` is
+-- ``fetch`` (one whose package shipped its outlets reads them instead:
+-- workspace_inputs/food_pois_package_raw.sql). Separate from the POI import's
+-- taxonomy-driven ``brewgis.osm.poi_raw``: this asks for exactly the tags the
+-- mRFEI splits on.
 --
--- The bounding box is the region's Overture window expanded by
+-- The bounding box is the workspace extent expanded by
 -- ``FOOD_ACCESS_BBOX_MARGIN`` degrees, because the metric counts outlets within
--- 1 km of a parcel and the demo regions' parcels run past that window (Fresno's
--- ~1.8 km south of its Overture bbox) — outlets there are only found if the
--- query reaches past it.
+-- 1 km of a parcel, and an edge parcel's outlets lie outside the parcels'
+-- own bounding box — they are only found if the query reaches past it.
 --
 -- Overpass is queried over HTTP GET (DuckDB's httpfs cannot POST), with the
 -- Overpass QL percent-encoded into the ``data`` parameter by
@@ -61,17 +63,17 @@ MODEL (
 -- ST_SetCRS(point, 'EPSG:4326')`` through the attach reads back as ``ST_SRID =
 -- 0``), and the same SRID-less transfer in both directions is documented in
 -- ``workspace/services/fetch_clone.py``. The SRID is therefore restored on the
--- PostGIS side: ``osm/food_pois.sql`` (the PostGIS VIEW over this table) re-tags
+-- PostGIS side: ``workspace_inputs/food_pois.sql`` (the PostGIS VIEW over this table) re-tags
 -- it with ``ST_SetSRID``, and that is the model consumers read.
 
 WITH elements AS (
     SELECT unnest(elements) AS e
     FROM read_json_auto(
         @food_access_url(
-            @overture_bbox_min_x,
-            @overture_bbox_min_y,
-            @overture_bbox_max_x,
-            @overture_bbox_max_y
+            @extent_min_x,
+            @extent_min_y,
+            @extent_max_x,
+            @extent_max_y
         ),
         format = 'auto'
     )

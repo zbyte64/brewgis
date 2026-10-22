@@ -20,19 +20,21 @@ produce a trip length, but its absolute scale is an artifact of parcel size and
 density — SACOG's canvas lands on ~1.2 km one-way against SACSIM's ~6.4 km, and
 VMT is proportional to it, so every VMT number comes out ~5x low.
 
-So: when the workspace's analysis region ships a reference table
-(``trip_length_table`` in ``region_blueprints.analysis_region_profiles`` — the
-imported SACOG v1 snapshot's SACSIM zones), that table wins. When it does not —
-Fresno, the SACOG reconstruction, any region built from public data — the model
+So: when the workspace's package shipped reference zones
+(``Workspace.trip_length_source = package`` — e.g. the SACOG v1 snapshot's
+SACSIM zones), those zones win. When it did not — Fresno, the SACOG
+reconstruction, any workspace built from public data — the workspace's zone
+table is empty (``workspace_inputs/trip_length_zones_gravity.sql``) and the model
 falls back to the gravity model's own
 ``avg_trip_length_km``, which preserves the *spatial gradient* (parcels near
 employment attract shorter trips, rural ones longer), rescaled so the regional
 mean equals ``transport_target_avg_trip_length_km``. The gradient is what makes
-the fallback region-specific; the target only fixes the level.
+the fallback area-specific; the target only fixes the level.
 
-Reference-table contract, checked by the region's loader rather than here: a
-plain lowercase ``schema.table`` identifier with a ``wkb_geometry`` geometry
-column plus the six numeric ``productions_hbw``/``productions_hbo``/
+The zones are ``brewgis.<workspace_schema>.trip_length_zones``
+(``workspace_inputs/trip_length_zones.sql``): a ``local_geometry``
+polygon in the workspace CRS behind a GiST index, plus the six numeric
+``productions_hbw``/``productions_hbo``/
 ``productions_nhb``/``attractions_hbw``/``attractions_hbo``/``attractions_nhb``
 columns, each in round-trip miles. A parcel's value is the mean of the six for
 the zone its centroid falls in, halved and converted to kilometres — the same
@@ -43,9 +45,7 @@ length weights the zones by parcel density, which shrinks the regional mean
 (SACOG: 5.76 km against the table's 6.42 km, because parcels concentrate in the
 short-trip zones), while the rescale keeps the table's spatial structure — the
 same relationship to a published regional mean that the fallback has to its
-target. The identifier is interpolated into the fetch SQL directly (region
-configuration in the region profile, the same trust the scenario's
-``parcel_table`` gets), so it must never be built from user input.
+target.
 
 The zone join is a ``LEFT JOIN`` on purpose: a parcel whose centroid falls
 outside every zone keeps the scaled gravity value instead of dropping its trips
@@ -65,7 +65,6 @@ from sqlmesh.core.model.definition import ModelKindName
 
 from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
-from brewgis.sqlmesh.macros.geometry import require_local_srid
 
 if TYPE_CHECKING:
     from sqlmesh.core.context import ExecutionContext
@@ -116,14 +115,14 @@ _TRIP_LENGTHS_MODEL = model(
     name="brewgis.@{scenario_schema}.trip_lengths",
     kind=ModelKindName.FULL,
     description=(
-        "One-way trip length per parcel in kilometres: the region's reference"
-        " trip-length zone when the scenario names such a table, otherwise the"
+        "One-way trip length per parcel in kilometres: the workspace's reference"
+        " trip-length zone when its package shipped zones, otherwise the"
         " gravity model's spatial gradient rescaled to the target regional mean."
     ),
     column_descriptions={
         "parcel_id": "Parcel identifier from the scenario end state (core_end_state).",
         "avg_trip_length_km": (
-            "One-way trip length of the parcel's trips (km): the region's"
+            "One-way trip length of the parcel's trips (km): the workspace's"
             " reference trip-length zone rescaled to the table's regional mean,"
             " or the gravity estimate scaled to the target regional mean."
         ),
@@ -181,10 +180,10 @@ def execute(
     core_end_state = context.resolve_table(
         f"brewgis.{context.blueprint_var('scenario_schema')}.core_end_state"
     )
-    # A reference table is region configuration: a plain ``schema.table`` name,
-    # empty when the region ships none. It is interpolated into the fetch below
-    # the way ``parcel_table`` is — project-owned, never user-supplied SQL.
-    table = context.blueprint_var("trip_length_table")
+    # The workspace's reference zones — empty when it has none (gravity).
+    zones_table = context.resolve_table(
+        f"brewgis.{context.blueprint_var('workspace_schema')}.trip_length_zones"
+    )
     target = _as_float(
         context.blueprint_var("transport_target_avg_trip_length_km"),
         _DEFAULT_TARGET_AVG_TRIP_LENGTH_KM,
@@ -205,7 +204,7 @@ def execute(
             }
         )
 
-    # The fallback every region gets: keep the gravity model's spatial gradient,
+    # The fallback every workspace gets: keep the gravity model's spatial gradient,
     # fix its absolute level. Without this a region's mean trip length is an
     # artifact of parcel size — and VMT, which multiplies it by the parcel's auto
     # trips, inherits the error directly.
@@ -214,12 +213,13 @@ def execute(
         target / gravity_mean if gravity_mean > 0 else 1.0
     )
 
-    if table:
-        # Distances are taken in the region's projected local_srid (the parcels'
-        # own ``centroid_local`` is in it), so the zone geometry is transformed
-        # into that CRS too — never the other way round, and never through a
-        # coarser CRS.
-        srid = require_local_srid(context)
+    has_zones = not context.fetchdf(
+        f"SELECT 1 AS present FROM {zones_table} LIMIT 1"  # noqa: S608 — SQLMesh-resolved identifier
+    ).empty
+    if has_zones:
+        # The zones carry ``local_geometry`` in the workspace CRS — the CRS the
+        # parcels' own ``centroid_local`` is in — behind a GiST index, so the
+        # containment probe is index-driven and nothing is reprojected per row.
         zone_km = _ZONE_LENGTH_KM.format(alias="z")
         zones = context.fetchdf(
             f"""
@@ -228,13 +228,13 @@ def execute(
                 {zone_km} AS zone_km,
                 (
                     SELECT AVG({_ZONE_LENGTH_KM.format(alias="z2")})
-                    FROM {table} AS z2
+                    FROM {zones_table} AS z2
                 ) AS zone_mean_km
             FROM {core_end_state} AS es
-            LEFT JOIN {table} AS z
-                ON ST_Contains(ST_Transform(z.wkb_geometry, {srid}), es.centroid_local)
+            LEFT JOIN {zones_table} AS z
+                ON ST_Contains(z.local_geometry, es.centroid_local)
             ORDER BY es.parcel_id
-            """  # noqa: S608 — the table is region configuration
+            """  # noqa: S608 — SQLMesh-resolved identifiers
         )
         gravity = gravity.merge(zones, on="parcel_id", how="left")
         # The reference table's own regional mean is the region's trip length;

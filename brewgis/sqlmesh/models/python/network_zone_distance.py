@@ -4,7 +4,7 @@ One instance per analyzed scenario (``brewgis.ascn<scenario_pk>``), blueprinted
 like :mod:`brewgis.sqlmesh.models.python.trip_distribution`. When the scenario
 sets ``transport_use_network_distance`` it holds the shortest drivable path, in
 km, between every connected pair of 2 km grid zones its parcels fall in, routed
-by ``pgr_dijkstraCost`` over the region's ``road_network_vertices`` /
+by ``pgr_dijkstraCost`` over the workspace's ``road_network_vertices`` /
 ``road_network_edges``; trip_distribution feeds it to the gravity model. With the
 option off it is empty and pgRouting is never called. With no analyzed scenario
 there is nothing to instantiate, and the module registers no model at all (see
@@ -17,7 +17,7 @@ parcels.
 
 This model is deliberately not an analysis module (no selector, no result
 table): it is never restated by an analysis run, so the matrix is computed once
-and cached. Its inputs are the scenario's parcel source and the region network,
+and cached. Its inputs are the scenario's parcel source and the workspace road network,
 not core_end_state, so restating ``core`` does not cascade into it.
 """
 
@@ -36,7 +36,7 @@ from sqlmesh.core.model.definition import ModelKindName
 from brewgis.sqlmesh.blueprint_models import register_blueprint_model
 from brewgis.sqlmesh.macros.analysis_blueprints import analysis_blueprint_profiles
 from brewgis.sqlmesh.macros.geometry import metres_per_unit
-from brewgis.sqlmesh.macros.geometry import require_local_srid
+from brewgis.sqlmesh.macros.geometry import require_workspace_srid
 from brewgis.sqlmesh.models.python._network_zones import MAX_ZONES
 from brewgis.sqlmesh.models.python._network_zones import ZONE_CELL_METRES
 
@@ -73,7 +73,7 @@ _NETWORK_ZONE_DISTANCE_MODEL = model(
     kind=ModelKindName.FULL,
     description=(
         "Road-network distance between the scenario's 2 km grid zones, routed over"
-        " the region's drivable Overture graph; empty unless the scenario uses"
+        " the workspace's drivable Overture graph; empty unless the scenario uses"
         " network distance for trip distribution."
     ),
     column_descriptions={
@@ -105,7 +105,7 @@ def execute(
     execution_time: TimeLike,  # noqa: ARG001
     **kwargs: Any,  # noqa: ARG001
 ) -> Iterator[pd.DataFrame]:
-    """Route every zone pair of the scenario over the region road network.
+    """Route every zone pair of the scenario over the workspace road network.
 
     A generator: with the option off it yields nothing (an empty table).
 
@@ -115,10 +115,10 @@ def execute(
     """
     parcels = context.resolve_table(f"{context.blueprint_var('parcel_table')}")
     vertices = context.resolve_table(
-        f"brewgis.{context.blueprint_var('public_data_region')}.road_network_vertices"
+        f"brewgis.{context.blueprint_var('workspace_schema')}.road_network_vertices"
     )
     edges = context.resolve_table(
-        f"brewgis.{context.blueprint_var('public_data_region')}.road_network_edges"
+        f"brewgis.{context.blueprint_var('workspace_schema')}.road_network_edges"
     )
 
     if not context.blueprint_var("transport_use_network_distance"):
@@ -126,7 +126,7 @@ def execute(
         # table empty.
         return
 
-    srid = require_local_srid(context)
+    srid = require_workspace_srid(context)
     mpu = metres_per_unit(srid)
     # The centroid expression is trip_distribution's, so both sides put every
     # parcel in the same cell (``_network_zones.zone_indices``).

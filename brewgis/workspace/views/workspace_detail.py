@@ -177,8 +177,8 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
 
     water_energy_status = _prereq_status(allocated_parcels_ready, density_factors_ready)
     status_by_key: dict[str, str] = {
-        # The region's constraint layers are a SQLMesh dependency the run
-        # builds itself (``brewgis.<region>.constraint_layers``).
+        # The workspace's constraint layers are a SQLMesh dependency the run
+        # builds itself (``brewgis.wsp<pk>.constraint_layers``).
         "env_constraint": _prereq_status(base_parcels_ready),
         "core": _prereq_status(scenario_ready, base_parcels_ready),
         "water_demand": water_energy_status,
@@ -253,9 +253,10 @@ class WorkspaceSettingsForm(forms.ModelForm):
 
     class Meta:
         model = Workspace
-        fields = ["tile_server_backend"]
+        fields = ["tile_server_backend", "local_srid"]
         widgets = {
             "tile_server_backend": forms.Select(attrs={"class": "form-select"}),
+            "local_srid": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
         }
 
 
@@ -263,7 +264,14 @@ class WorkspaceSettingsForm(forms.ModelForm):
 def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the workspace detail hub page."""
     workspace = get_object_or_404(Workspace, pk=pk)
+    return _render_detail(
+        request, workspace, settings_form=WorkspaceSettingsForm(instance=workspace)
+    )
 
+
+def _render_detail(
+    request: HttpRequest, workspace: Workspace, *, settings_form: WorkspaceSettingsForm
+) -> HttpResponse:
     county_q = Q()
     for entry in workspace.county_fips_list:
         county_q |= Q(
@@ -283,7 +291,12 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "region_summary": _build_region_summary(workspace),
         "analysis_modules": build_analysis_modules(workspace),
         "recent_runs": recent_runs,
-        "settings_form": WorkspaceSettingsForm(instance=workspace),
+        "settings_form": settings_form,
+        "exports": workspace.exports.all()[:10],
+        # The last build of an imported workspace's packaged base canvas.
+        "package_build": DataImportRun.objects.filter(
+            workspace=workspace, import_type="package"
+        ).first(),
         **build_catalog_context(workspace),
     }
 
@@ -296,6 +309,8 @@ def workspace_settings_update(request: HttpRequest, pk: int) -> HttpResponse:
     """Save workspace-level settings (e.g. tile server backend) from the hub page."""
     workspace = get_object_or_404(Workspace, pk=pk)
     form = WorkspaceSettingsForm(request.POST, instance=workspace)
-    if form.is_valid():
-        form.save()
+    if not form.is_valid():
+        workspace.refresh_from_db()
+        return _render_detail(request, workspace, settings_form=form)
+    form.save()
     return redirect("workspace:workspace_detail", pk=pk)

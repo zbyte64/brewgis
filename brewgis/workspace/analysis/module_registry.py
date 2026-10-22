@@ -679,10 +679,10 @@ ANALYSIS_PARAMETERS: tuple[AnalysisParameter, ...] = (
     # (``vmt_updater_tool.py``), applied on top of the daily VMT as
     # ``vmt_daily_w_trucks``.
     AnalysisParameter("transport_truck_factor", 0.031, "float", ("vmt",)),
-    # Trip length — the target regional mean for a region without reference
-    # trip-length zones (``trip_length_table`` in the analysis region profile, see
+    # Trip length — the target regional mean for a workspace without reference
+    # trip-length zones (``Workspace.trip_length_source`` is ``gravity``, see
     # ``sqlmesh/models/python/trip_lengths.py``): the gravity model's own
-    # spatial gradient is rescaled to it, so any region lands on a realistic
+    # spatial gradient is rescaled to it, so any workspace lands on a realistic
     # regional mean instead of the ~1 km a pure centroid distribution produces.
     AnalysisParameter(
         "transport_target_avg_trip_length_km",

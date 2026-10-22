@@ -99,6 +99,7 @@ class TestResolvePaletteName:
 class TestAutoGenerate(TestCase):
     def setUp(self) -> None:
         self.workspace = Workspace.objects.create(
+            local_srid=3310,
             name="Auto Test",
             db_schema="public",
         )
@@ -312,6 +313,7 @@ class TestResolveSymbologySource(TestCase):
 
     def setUp(self) -> None:
         self.workspace = Workspace.objects.create(
+            local_srid=3310,
             name="Scenario-Aware Symbology Test",
             db_schema="public",
             base_table="public.base_canvas",
@@ -371,6 +373,7 @@ class TestAutoGenerateScenarioAware(TestCase):
 
     def setUp(self) -> None:
         self.workspace = Workspace.objects.create(
+            local_srid=3310,
             name="Scenario-Aware Auto Generate Test",
             db_schema="public",
             base_table="public.base_canvas",

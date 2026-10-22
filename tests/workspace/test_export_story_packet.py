@@ -23,7 +23,9 @@ class TestExportStoryPacketCommand(TestCase):
     """Tests for the export_story_packet management command."""
 
     def setUp(self):
-        self.workspace = Workspace.objects.create(name="Test Workspace")
+        self.workspace = Workspace.objects.create(
+            local_srid=3310, name="Test Workspace"
+        )
         self.scenario = Scenario.objects.create(
             name="Test Scenario",
             slug="test-scenario",

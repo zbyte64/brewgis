@@ -25,7 +25,7 @@ BUILT = "brewgis.workspace.analysis.pipeline.model_fqns_built_in"
 PUBLISHED = "brewgis.workspace.analysis.pipeline._list_tables"
 REGISTER = "brewgis.workspace.analysis.pipeline.register_result_layer"
 SYNC = "brewgis.workspace.analysis.pipeline.run_modules_sync"
-REGION = "brewgis.workspace.analysis.pipeline._workspace_region"
+INPUT_SCHEMA = "brewgis.workspace.analysis.pipeline._workspace_schema"
 
 
 class TestPlanSelection:
@@ -34,7 +34,7 @@ class TestPlanSelection:
     def test_plans_new_models_while_restating_built_ones(self, monkeypatch) -> None:
         plans: list[dict[str, Any]] = []
         monkeypatch.setattr(PLAN, lambda **kwargs: plans.append(kwargs))
-        monkeypatch.setattr(REGION, lambda _workspace_id: "fresno")
+        monkeypatch.setattr(INPUT_SCHEMA, lambda _workspace_id: "wsp2")
         monkeypatch.setattr(BUILT, lambda *_a, **_k: ["brewgis.ascn7.core_end_state"])
         monkeypatch.setattr(
             PUBLISHED,
@@ -59,10 +59,16 @@ class TestPlanSelection:
         # never selects it fails with a missing relation the first time a
         # scenario runs vmt (see ``_trip_length_input``).
         assert "brewgis.ascn7.trip_lengths" in plan["select"]
-        # env_constraint reads its region's constraint layers, which no module
+        # env_constraint reads its workspace's constraint layers, which no module
         # selector names: the run plans them (and everything upstream of them)
         # itself, never restating source data.
-        assert "+brewgis.fresno.constraint_layers" in plan["select"]
+        assert "+brewgis.wsp2.constraint_layers" in plan["select"]
+        # vmt's trip lengths read the workspace's own zones (empty for a gravity
+        # workspace), and trip_distribution routes over its own road network.
+        assert "+brewgis.wsp2.trip_length_zones" in plan["select"]
+        assert "+brewgis.wsp2.road_network_edges" in plan["select"]
+        # Inputs are selected, never restated: a run must not refetch them.
+        assert not any("wsp2" in fqn for fqn in plan["restate_models"])
         assert plan["restate_models"] == ["brewgis.ascn7.core_end_state"]
         # Restating makes SQLMesh read its models from state, which is how
         # trip_generation/vmt — never built for this scenario — used to be
@@ -82,7 +88,7 @@ class TestResultVerification:
         self, monkeypatch
     ) -> None:
         monkeypatch.setattr(PLAN, lambda **_kwargs: None)
-        monkeypatch.setattr(REGION, lambda _workspace_id: "fresno")
+        monkeypatch.setattr(INPUT_SCHEMA, lambda _workspace_id: "wsp2")
         monkeypatch.setattr(BUILT, lambda *_a, **_k: ["brewgis.ascn7.core_end_state"])
         monkeypatch.setattr(
             PUBLISHED, lambda _schema: ["core_end_state", "core_increment"]
@@ -100,7 +106,7 @@ class TestResultVerification:
     ) -> None:
         registered: list[str] = []
         monkeypatch.setattr(PLAN, lambda **_kwargs: None)
-        monkeypatch.setattr(REGION, lambda _workspace_id: "fresno")
+        monkeypatch.setattr(INPUT_SCHEMA, lambda _workspace_id: "wsp2")
         monkeypatch.setattr(BUILT, lambda *_a, **_k: [])
         monkeypatch.setattr(
             PUBLISHED,

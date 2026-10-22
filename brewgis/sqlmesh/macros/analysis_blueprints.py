@@ -18,10 +18,10 @@ at the location the Layers/Martin/UI paths already read,
 
 Every input a model reads is resolved here, from the ``Workspace`` and
 ``Scenario`` rows, never supplied by a launcher: the parcel source and built
-forms from the workspace, the analysis region from the workspace's base table
-(and through it the region's own data — ``brewgis.<region>.constraint_layers``,
-the trip-length zones and public-data region of
-``region_blueprints.analysis_region_profiles``), and the per-scenario value
+forms from the workspace, the workspace's own input models
+(``brewgis.<workspace_schema>.constraint_layers``, its trip-length zones, food
+outlets and road network — see ``workspace_blueprints``) and the CRS every
+measurement is taken in (``Workspace.local_srid``), and the per-scenario value
 tunables (``Scenario.analysis_params``,
 see ``module_registry.ANALYSIS_PARAMETERS``). Column names are not
 configurable: the models read the columns the SQLMesh-built base canvas has.
@@ -69,7 +69,7 @@ from brewgis.sqlmesh.model_names import RESULT_SCHEMA_TEMPLATE
 _LOGGER_NAME = __name__
 
 # Profile keys whose value names an object rather than a literal, rendered as a
-# bare identifier — the form ``region_blueprints`` uses for ``region`` (they are
+# bare identifier — the form ``workspace_blueprints`` uses for ``workspace_schema`` (they are
 # interpolated into object names, e.g. ``brewgis.@{scenario_schema}.<model>``,
 # where a quoted literal would become part of the identifier). ``parcel_key_type``
 # is a bare SQL *token* for the same reason: it is a Python model's column type
@@ -80,13 +80,12 @@ _IDENTIFIER_VARS = {
     "result_schema",
     "model_table",
     "parcel_key_type",
-    "region",
-    "public_data_region",
+    "workspace_schema",
 }
 
 # Postgres column type -> the type a model declares for the parcel key. The key
-# is whatever the scenario's parcel source keys on, and the demo regions do not
-# agree: the assessor APN is ``varchar`` while the legacy ``public.base_canvas``
+# is whatever the scenario's parcel source keys on, and the demo workspaces do
+# not agree: the assessor APN is ``varchar`` while the legacy ``public.base_canvas``
 # and ``sacog.base_canvas_reconciled`` key on a numeric id. A model that declares
 # the wrong one cannot join the rest of its scenario's models (Postgres has no
 # text = integer operator), so the type travels in the blueprint.
@@ -231,16 +230,16 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     ``parcel_table`` names the workspace's *effective* base layer — the
     built-form fill output when ``Workspace.fill_built_form`` is on, else its
     ``base_table`` — because that is the layer the scenario's parcels really
-    live in; ``parcel_key_type`` and the ``region`` stay derived from the raw
-    ``base_table``, since they describe the source data. A base layer a SQLMesh
-    model publishes is named as the 3-part model FQN so the analysis depends on
-    it; any other base layer (an imported table in a region schema) is named as
-    the plain ``schema.table`` it is.
+    live in; ``parcel_key_type`` stays derived from the raw ``base_table``, since
+    it describes the source data. A base layer a SQLMesh model publishes is named
+    as the 3-part model FQN so the analysis depends on it; any other base layer
+    (an imported table) is named as the plain ``schema.table`` it is.
 
     Two kinds of scenario get no profile, each logged: an ALTERNATIVE scenario
     whose canvas model was not emitted (see ``scenario_canvas_profiles``), and
-    one whose workspace is in no region (``fetch_clone.workspace_region`` —
-    there is no default region). Skipping rather than raising is deliberate:
+    one whose workspace has no analysis inputs
+    (``workspace_extent.workspace_inputs_error`` — there is no default area to
+    substitute). Skipping rather than raising is deliberate:
     one unplannable scenario must not make the whole project unloadable, since
     these profiles are part of every model load. The launch service refuses
     such a scenario before it reaches a plan.
@@ -249,14 +248,12 @@ def _scenario_profiles() -> list[dict[str, Any]]:
 
     django.setup()
 
-    from brewgis.sqlmesh.macros.region_blueprints import analysis_region_profiles
     from brewgis.workspace.models import AnalysisRun
     from brewgis.workspace.models import Scenario
     from brewgis.workspace.models import ScenarioType
-    from brewgis.workspace.services.fetch_clone import WorkspaceRegionError
-    from brewgis.workspace.services.fetch_clone import workspace_region
     from brewgis.workspace.services.sqlmesh_tables import _model_backed_tables
     from brewgis.workspace.services.sqlmesh_tables import is_model_backed
+    from brewgis.workspace.services.workspace_extent import workspace_inputs_error
 
     _drop_inherited_connection()
 
@@ -265,7 +262,6 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     )
     canvas_fqns: dict[int, str] | None = None
     model_backed = _model_backed_tables()
-    regions = analysis_region_profiles()
     profiles: list[dict[str, Any]] = []
     scenarios = (
         Scenario.objects.filter(pk__in=scenario_ids)
@@ -275,8 +271,8 @@ def _scenario_profiles() -> list[dict[str, Any]]:
     for scenario in scenarios:
         workspace = scenario.workspace
         # Two distinct facts, deliberately read from different places: the
-        # *source* the workspace's data came from (region, parcel-key type —
-        # properties of the source data, and the only one of the two that
+        # *source* the workspace's data came from (its parcel-key type — a
+        # property of the source data, and the only one of the two that
         # exists at model-load time on a workspace whose fill has never been
         # materialized) and the base layer actually *in effect* (the built-form
         # fill output when ``Workspace.fill_built_form`` is on, else the
@@ -312,18 +308,17 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             )
             continue
 
-        # A workspace in no region has no constraint layers, trip-length zones
-        # or road network to read, and no region is substituted for it. Its
-        # scenarios get no models; the launch service refuses them with this
-        # same message (``launch.scenario_analysis_errors``). Raising here
-        # instead would make the whole project unloadable — every other
-        # workspace's runs included — since these profiles are part of every
-        # model load.
-        try:
-            region = workspace_region(workspace)
-        except WorkspaceRegionError as error:
+        # A workspace without an extent has no input models to read (no
+        # constraint layers, trip-length zones or road network — see
+        # ``workspace_blueprints``). Its scenarios get no models; the launch
+        # service refuses them with the same message
+        # (``launch.scenario_analysis_errors``). Raising here instead would make
+        # the whole project unloadable — every other workspace's runs included —
+        # since these profiles are part of every model load.
+        error = workspace_inputs_error(workspace)
+        if error is not None:
             # A configuration error, not a crash: the message is the report.
-            logging.getLogger(_LOGGER_NAME).error(  # noqa: TRY400
+            logging.getLogger(_LOGGER_NAME).error(
                 "Scenario %s (%s) has no analysis models: %s",
                 scenario.pk,
                 scenario.slug,
@@ -345,13 +340,11 @@ def _scenario_profiles() -> list[dict[str, Any]]:
             "parcel_key_type": _parcel_key_type(raw_base_table),
             "built_form_table": f"{workspace.db_schema}.built_forms",
             "base_canvas_table": base_table,
-            # The analysis region (``fetch_clone.workspace_region``): its own
-            # ``brewgis.<region>.constraint_layers`` and trip-length zones, and
-            # the pipeline region whose public-data models (food POIs, road
-            # network) cover it — see ``region_blueprints.analysis_region_profiles``.
-            "region": region,
-            "public_data_region": regions[region]["public_data_region"],
-            "trip_length_table": regions[region]["trip_length_table"],
+            # The workspace's own input models — constraint layers, trip-length
+            # zones, food outlets, road network (``workspace_blueprints``) — and
+            # the CRS every measurement is taken in.
+            "workspace_schema": workspace.input_schema,
+            "local_srid": int(workspace.local_srid),
         }
         # Every analysis parameter is baked into every blueprint, so a
         # blueprinted model resolves it without a config var or a plan-time

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import factory
 from django.contrib.auth.models import User
+from django.contrib.gis.geos import Polygon
 
 from brewgis.workspace.built_forms.models import BuildingType
 from brewgis.workspace.built_forms.models import PlaceType
@@ -33,6 +34,13 @@ class UserFactory(factory.django.DjangoModelFactory):
             instance.save()
 
 
+#: A Fresno-sized bounding box (EPSG:4326). A workspace needs an extent to have
+#: analysis inputs (``macros/workspace_blueprints.py``), so a test whose scenario
+#: is analyzed passes this; the factory's default (no extent) is a workspace the
+#: launch service refuses as not configured for analysis.
+ANALYSIS_EXTENT = Polygon.from_bbox((-119.95, 36.6, -119.55, 36.92))
+
+
 class WorkspaceFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Workspace
@@ -40,6 +48,8 @@ class WorkspaceFactory(factory.django.DjangoModelFactory):
     name = factory.Sequence(lambda n: f"Workspace {n}")
     db_connection = "default"
     db_schema = "public"
+    # The fixtures' parcels are in California: CA Albers, metres.
+    local_srid = 3310
 
 
 class LayerFactory(factory.django.DjangoModelFactory):

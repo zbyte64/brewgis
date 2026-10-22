@@ -52,10 +52,89 @@
             {{ settings_form.tile_server_backend }}
           </div>
           <div class="col-auto">
+            <label for="{{ settings_form.local_srid.id_for_label }}" class="form-label">
+              {% translate "Projected CRS (EPSG)" %}
+            </label>
+            {{ settings_form.local_srid }}
+          </div>
+          <div class="col-auto">
             <button type="submit" class="btn btn-outline-primary">{% translate "Save" %}</button>
+          </div>
+          {% if settings_form.errors %}
+            <div class="col-12 text-danger small">
+              {% for errors in settings_form.errors.values %}{{ errors|join:" " }}{% endfor %}
+            </div>
+          {% endif %}
+        </form>
+        <dl class="row small text-muted mt-3 mb-0">
+          <dt class="col-sm-3">{% translate "Base layer" %}</dt>
+          <dd class="col-sm-9">
+            {{ workspace.base_table }}
+            {% if package_build %}
+              {% with badge_class=package_build.status|analysis_status_badge %}
+                <span class="badge bg-{{ badge_class }} ms-2">{% translate "Package build" %}: {{ package_build.status|title }}</span>
+              {% endwith %}
+              {% if package_build.status == "failed" %}
+                <div class="text-danger mt-1">{{ package_build.error_log|truncatechars:200 }}</div>
+                <form method="post"
+                      action="{% url 'workspace:workspace_package_rebuild' workspace.pk %}"
+                      class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-primary mt-1">{% translate "Retry base canvas build" %}</button>
+                </form>
+              {% endif %}
+            {% endif %}
+          </dd>
+          <dt class="col-sm-3">{% translate "Constraint layers" %}</dt>
+          <dd class="col-sm-9">
+            {{ workspace.get_constraint_source_display }}
+          </dd>
+          <dt class="col-sm-3">{% translate "Trip lengths" %}</dt>
+          <dd class="col-sm-9">
+            {{ workspace.get_trip_length_source_display }}
+          </dd>
+          <dt class="col-sm-3">{% translate "Food outlets and road network" %}</dt>
+          <dd class="col-sm-9">
+            {{ workspace.get_public_data_source_display }}
+          </dd>
+        </dl>
+      </div>
+    </div>
+    <!-- Workspace Package -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="card-title mb-0">{% translate "Workspace Package" %}</h5>
+      </div>
+      <div class="card-body">
+        <p class="card-text small text-muted">
+          {% blocktranslate trimmed %}
+            Export this workspace's base layer, Building Types and its own analysis inputs as a
+            package another BrewGIS server imports as a new workspace.
+          {% endblocktranslate %}
+        </p>
+        <form hx-post="{% url 'workspace:workspace_export_create' workspace.pk %}"
+              hx-target="#workspace-export-list"
+              hx-swap="afterbegin"
+              class="row g-2 align-items-center">
+          <div class="col-auto form-check ms-2">
+            <input class="form-check-input"
+                   type="checkbox"
+                   name="include_public_data"
+                   id="export-include-public-data" />
+            <label class="form-check-label" for="export-include-public-data">
+              {% translate "Include food outlets and road network" %}
+            </label>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">{% translate "Export Package" %}</button>
           </div>
         </form>
       </div>
+      <ul class="list-group list-group-flush" id="workspace-export-list">
+        {% for export in exports %}
+          {% include "workspace/workspace_package/export_status.html#export-status" %}
+        {% endfor %}
+      </ul>
     </div>
     <!-- Scenario Management Panel -->
     <div class="card mb-4">
@@ -279,6 +358,8 @@
     </div>
   </div>
   {% block inline_javascript %}
+    {# The base block wires the CSRF header onto htmx requests (the export card). #}
+    {{ block.super }}
     <script>
       (function() {
         const modal = document.getElementById('deleteScenarioModal');
