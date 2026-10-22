@@ -69,7 +69,6 @@ _WORKSPACE_CHILD_DELETES: tuple[str, ...] = (
     "DELETE FROM workspace_dataimportrun WHERE workspace_id = %s",
     "DELETE FROM workspace_buildingtype WHERE workspace_id = %s",
     "DELETE FROM workspace_placetype WHERE workspace_id = %s",
-    "DELETE FROM workspace_poicache WHERE workspace_id = %s",
     "DELETE FROM workspace_externalmapservice WHERE workspace_id = %s",
     "DELETE FROM workspace_mergeaudit WHERE workspace_id = %s",
     "DELETE FROM workspace_paintrun WHERE workspace_id = %s",
