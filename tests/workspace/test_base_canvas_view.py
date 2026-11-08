@@ -31,6 +31,7 @@ from tests.factories import WorkspaceFactory
 
 BASE_TABLE = "public.base_canvas"
 VIEW_MODULE = "brewgis.workspace.views.base_canvas"
+ADOPTION_MODULE = "brewgis.workspace.services.workspace_base"
 
 
 @dataclass
@@ -72,12 +73,14 @@ def chosen_source(monkeypatch) -> None:
 @pytest.fixture
 def spy(monkeypatch) -> _Spy:
     captured = _Spy()
+    # The form adopts the base through the one service every base-table change
+    # takes (``services.workspace_base.adopt_base_table``).
     monkeypatch.setattr(
-        f"{VIEW_MODULE}.run_sqlmesh_plan",
+        f"{ADOPTION_MODULE}.run_sqlmesh_plan",
         lambda **kwargs: captured.plans.append(kwargs),
     )
     monkeypatch.setattr(
-        f"{VIEW_MODULE}.purge_models_from_environments",
+        f"{ADOPTION_MODULE}.purge_models_from_environments",
         lambda fqns: captured.purged.append(list(fqns)) or [],
     )
     return captured
@@ -211,6 +214,25 @@ class TestFillAndCanvasPlans:
         workspace.refresh_from_db()
         assert workspace.fill_built_form is False
         assert workspace.effective_base_table() == BASE_TABLE
+
+    def test_adopting_a_base_table_takes_its_extent(
+        self, client, chosen_source, spy, base_canvas_table
+    ) -> None:
+        """The extent is what the workspace's public analysis inputs are fetched
+        over, so it has to cover every parcel of the base it adopts."""
+        workspace = WorkspaceFactory(base_table="public.no_such_table", extent=None)
+
+        assert _submit(client, workspace, fill=False).status_code == 302
+
+        workspace.refresh_from_db()
+        assert workspace.extent is not None
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT bool_and(ST_Within(ST_Transform(geometry, 4326), "
+                "ST_GeomFromEWKT(%s))) FROM public.base_canvas",
+                [workspace.extent.ewkt],
+            )
+            assert cursor.fetchone()[0] is True
 
     def test_a_workspace_without_canvases_plans_the_fill_alone(
         self, client, chosen_source, spy, base_canvas_table

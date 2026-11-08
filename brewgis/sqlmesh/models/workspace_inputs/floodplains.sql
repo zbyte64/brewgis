@@ -1,7 +1,7 @@
 MODEL (
-  name brewgis.@{region}.floodplains,
+  name brewgis.@{workspace_schema}.floodplains,
   kind VIEW,
-  description 'FEMA NFHL Special Flood Hazard Area zones over the region bounding box from MapServer layer 28, one polygon per row.',
+  description 'FEMA NFHL Special Flood Hazard Area zones over the workspace extent from MapServer layer 28, one polygon per row.',
   column_descriptions (
     fld_zone = 'FEMA flood hazard zone code (FLD_ZONE) of the polygon in the NFHL layer.',
     sfha_tf = 'SFHA_TF flag marking whether the zone is a Special Flood Hazard Area.',
@@ -14,23 +14,23 @@ MODEL (
     static_bfe DOUBLE PRECISION,
     geom GEOMETRY(GEOMETRY, 4326)
   ),
-  blueprints @region_blueprints()
+  blueprints @workspace_blueprints('public_constraints')
 );
 
--- Region Floodplains — PostGIS VIEW wrapping the DuckDB bridge table with
+-- Workspace Floodplains — PostGIS VIEW wrapping the DuckDB bridge table with
 -- proper SRID column metadata.
 --
--- The DuckDB bridge (brewgis.<region>.floodplains_raw) materializes
+-- The DuckDB bridge (brewgis.<workspace_schema>.floodplains_raw) materializes
 -- the fetched FEMA NFHL flood zones with ST_SetCRS, then SQLMesh exposes it
 -- to PostGIS via FDW. The FDW drops SRID metadata, so all geometries arrive
 -- as SRID=0.
 --
 -- This VIEW restores SRID 4326 via ST_SetSRID and renames the geometry column
--- to geom; constraints/constraint_layers.sql reads it.
+-- to geom; workspace_inputs/constraints_public.sql reads it.
 
 SELECT
     fld_zone,
     sfha_tf,
     static_bfe,
     ST_SetSRID(geometry, 4326) AS geom
-FROM brewgis.@{region}.floodplains_raw;
+FROM brewgis.@{workspace_schema}.floodplains_raw;

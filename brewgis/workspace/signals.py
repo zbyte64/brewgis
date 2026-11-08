@@ -11,16 +11,24 @@ Wired in ``WorkspaceConfig.ready``.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
+from django.conf import settings
+from django.db import transaction
 from django.db.models.signals import post_delete
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from brewgis.workspace.models import WORKSPACE_PACKAGES_DIR
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import DataImportRun
 from brewgis.workspace.models import Layer
 from brewgis.workspace.models import LayerGroup
 from brewgis.workspace.models import PaintRun
 from brewgis.workspace.models import SymbologyConfig
+from brewgis.workspace.models import Workspace
+from brewgis.workspace.models import WorkspaceExport
 from brewgis.workspace.services.map_events import notify_map
 
 
@@ -98,3 +106,36 @@ def _import_run_saved(
         import_type=instance.import_type,
         status=instance.status,
     )
+
+
+# ── Files a row owns ──────────────────────────────────────────────────
+# Not map events: the files on disk that belong to a row, removed once the
+# deletion has committed (a rolled-back delete keeps them).
+
+
+@receiver(post_delete, sender=Workspace)
+def _workspace_deleted(instance: Workspace, **_: object) -> None:
+    root = Path(settings.MEDIA_ROOT) / WORKSPACE_PACKAGES_DIR / str(instance.pk)
+    schema = instance.input_schema
+
+    def cleanup() -> None:
+        # Imported lazily: the SQLMesh runner is not app start-up's to load.
+        from brewgis.workspace.analysis.sqlmesh_runner import (
+            purge_models_from_environments,
+        )
+
+        shutil.rmtree(root, ignore_errors=True)
+        # Its ``wsp<pk>`` input models leave the project with the row; a stale
+        # environment entry would fail the next plan that promotes it (the
+        # reason ``drop_scenario_analysis`` de-lists a scenario's models).
+        purge_models_from_environments(schemas=[schema])
+
+    transaction.on_commit(cleanup)
+
+
+@receiver(post_delete, sender=WorkspaceExport)
+def _export_deleted(instance: WorkspaceExport, **_: object) -> None:
+    name = instance.file.name
+    if name:
+        storage = instance.file.storage
+        transaction.on_commit(lambda: storage.delete(name))

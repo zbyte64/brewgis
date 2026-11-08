@@ -6,6 +6,7 @@ from sqlmesh import macro
 
 from brewgis.sqlmesh.crs import metres_per_unit
 from brewgis.sqlmesh.crs import require_local_srid
+from brewgis.sqlmesh.crs import require_workspace_srid
 
 if TYPE_CHECKING:
     from sqlmesh.core.macros import MacroEvaluator
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 # Re-exported here for the models and services that import them from this
 # module; the definitions live in ``brewgis.sqlmesh.crs`` so that every macro
 # module resolving them shares one object (see that module's docstring).
-__all__ = ["metres_per_unit", "require_local_srid"]
+__all__ = ["metres_per_unit", "require_local_srid", "require_workspace_srid"]
 
 
 @macro()
@@ -95,3 +96,57 @@ def local_srid(evaluator: MacroEvaluator) -> str:
         ST_Transform(es.geometry, @local_srid()) AS geometry
     """
     return str(require_local_srid(evaluator))
+
+
+# ── Workspace CRS ─────────────────────────────────────────────────────
+# The macros above read the project-wide ``local_srid`` variable, which only the
+# region construction pipeline (``@region_blueprints()`` models) measures in.
+# Every workspace-scoped model — a scenario's analysis, a workspace's ``wsp<pk>``
+# inputs, a layer filter — measures in its own workspace's CRS instead, carried
+# as the ``local_srid`` blueprint variable (``Workspace.local_srid``). These are
+# the same conversions against that CRS. They are separate macros, not a
+# blueprint-first branch inside the ones above, because SQLMesh fingerprints a
+# model by its macros' source: changing those would re-version every
+# construction model that uses them.
+
+
+@macro()
+def workspace_srid(evaluator: MacroEvaluator) -> str:
+    """Render the workspace CRS as the bare integer literal to project a geometry into.
+
+    Usage in model SQL::
+
+        ST_Transform(es.geometry, @workspace_srid()) AS local_geometry
+    """
+    return str(require_workspace_srid(evaluator))
+
+
+@macro()
+def workspace_length_metres(evaluator: MacroEvaluator, length: str) -> str:
+    """Convert a length measured in the workspace CRS (``ST_Length``, ``ST_Distance``) to metres."""
+    return f"(({length}) * {metres_per_unit(require_workspace_srid(evaluator))!r})"
+
+
+@macro()
+def workspace_area_sqm(evaluator: MacroEvaluator, area: str) -> str:
+    """Convert an area measured in the workspace CRS (``ST_Area``) to square metres."""
+    return f"(({area}) * {metres_per_unit(require_workspace_srid(evaluator)) ** 2!r})"
+
+
+@macro()
+def metres_in_workspace_units(evaluator: MacroEvaluator, metres: str) -> str:
+    """Express a distance in metres (a search radius) in workspace-CRS units.
+
+    Usage in model SQL::
+
+        ST_DWithin(a.centroid_local, b.centroid_local, @metres_in_workspace_units(403.0))
+    """
+    return f"(({metres}) / {metres_per_unit(require_workspace_srid(evaluator))!r})"
+
+
+@macro()
+def workspace_area_acres(evaluator: MacroEvaluator, geom: str) -> str:
+    """A geometry's area in acres, measured in the workspace CRS (``@st_area_projected``'s twin)."""
+    srid = require_workspace_srid(evaluator)
+    square_metres_per_unit = metres_per_unit(srid) ** 2
+    return f"public.sqm_to_acres(ST_Area(ST_Transform({geom}, {srid})) * {square_metres_per_unit!r})"

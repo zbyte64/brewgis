@@ -50,6 +50,7 @@ from tests.factories import LayerFactory
 from tests.factories import ScenarioFactory
 from tests.factories import StyleClassFactory
 from tests.factories import SymbologyConfigFactory
+from tests.factories import WorkspaceFactory
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -275,19 +276,21 @@ class TestModelNaming:
         assert filter_model_fqn(42) == f'brewgis."{SPATIAL_FILTER_SCHEMA}"."filter_42"'
 
     def test_source_table_name_is_keyed_on_the_source_identity(self) -> None:
-        table = filter_source_model_table("poi", "points", "geometry")
+        table = filter_source_model_table("poi", "points", "geometry", 3310)
         assert table.startswith("src_")
-        # Same source, same model: every condition over one table shares it.
-        assert filter_source_model_table("poi", "points", "geometry") == table
+        # Same source, same CRS, same model: every condition over one table shares it.
+        assert filter_source_model_table("poi", "points", "geometry", 3310) == table
         # A different geometry column is a different projection.
-        assert filter_source_model_table("poi", "points", "centroid") != table
+        assert filter_source_model_table("poi", "points", "centroid", 3310) != table
         # So is a different table with the same name in another schema.
-        assert filter_source_model_table("other", "points", "geometry") != table
+        assert filter_source_model_table("other", "points", "geometry", 3310) != table
+        # And the same table projected into another workspace's CRS.
+        assert filter_source_model_table("poi", "points", "geometry", 2226) != table
 
     def test_source_fqn_quotes_every_part(self) -> None:
-        table = filter_source_model_table("poi", "points", "geometry")
+        table = filter_source_model_table("poi", "points", "geometry", 3310)
         assert (
-            filter_source_model_fqn("poi", "points", "geometry")
+            filter_source_model_fqn("poi", "points", "geometry", 3310)
             == f'brewgis."{SPATIAL_FILTER_SCHEMA}"."{table}"'
         )
 
@@ -486,8 +489,8 @@ class TestFilterSourceTraversal:
         apply_filter(flt)
 
         assert all_filter_sources() == [
-            ("poi", "points", "geometry"),
-            ("other", "stops", "geom"),
+            ("poi", "points", "geometry", layer.workspace.local_srid),
+            ("other", "stops", "geom", layer.workspace.local_srid),
         ]
 
     def test_column_filters_contribute_no_sources(self) -> None:
@@ -548,11 +551,52 @@ class TestSpatialFilterProfiles:
         assert len(profiles) == 1
         profile = profiles[0]
         assert profile["source_model_table"] == filter_source_model_table(
-            "spatial_filter_probe", "places", "geom"
+            "spatial_filter_probe", "places", "geom", 3310
         )
         assert profile["source_ref"] == "spatial_filter_probe.places"
         assert profile["source_geom"] == "geom"
         assert profile["all_columns"] == ["id", "geom"]
+
+    def test_each_workspace_probes_a_projection_in_its_own_crs(
+        self, db, geometry_probe_tables
+    ) -> None:
+        """Two workspaces in different CRSs filtering on one table get one
+        projection each, and each filter probes the one in its own CRS — a
+        probe across CRSs would compare coordinates in different units."""
+        stored = _stored(
+            _node(source="spatial_filter_probe.places", source_geom="geom")
+        )
+        filters = {}
+        for srid in (3310, 2226):
+            layer = LayerFactory(
+                workspace=WorkspaceFactory(local_srid=srid),
+                db_schema="public",
+                db_table="base_canvas",
+            )
+            flt = LayerFilter.objects.create(
+                layer=layer, name="Near", filter_json=stored
+            )
+            apply_filter(flt)
+            filters[flt.pk] = srid
+
+        sources = {
+            profile["source_model_table"]: profile["local_srid"]
+            for profile in spatial_filter_source_profiles()
+        }
+        refs = {
+            profile["model_table"]: (
+                profile["local_srid"],
+                profile["filter_json"]["filter_ref"],
+            )
+            for profile in spatial_filter_profiles()
+        }
+
+        assert sorted(sources.values()) == [2226, 3310]
+        for pk, srid in filters.items():
+            assert refs[f"filter_{pk}"] == (
+                srid,
+                filter_source_model_fqn("spatial_filter_probe", "places", "geom", srid),
+            )
 
     def test_profile_carries_the_model_facts_and_resolved_filter_ref(
         self, db, geometry_probe_tables
@@ -594,7 +638,7 @@ class TestSpatialFilterProfiles:
                 {
                     **stored,
                     "filter_ref": filter_source_model_fqn(
-                        "spatial_filter_probe", "places", "geom"
+                        "spatial_filter_probe", "places", "geom", 3310
                     ),
                 },
             ],
@@ -656,7 +700,7 @@ class TestSpatialFilterProfiles:
         assert sorted(spatial_filter_model_fqns()) == sorted(
             [
                 filter_model_fqn(flt.pk),
-                filter_source_model_fqn("spatial_filter_probe", "places", "geom"),
+                filter_source_model_fqn("spatial_filter_probe", "places", "geom", 3310),
             ]
         )
 

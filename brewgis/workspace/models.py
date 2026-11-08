@@ -1,15 +1,59 @@
 import uuid
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.gis.db import models as gis_models
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.text import slugify
+from pyproj.exceptions import CRSError
 
+from brewgis.sqlmesh.crs import metres_per_unit
+from brewgis.sqlmesh.model_names import workspace_schema_name
 from brewgis.workspace.built_forms.models import BuildingType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceType  # noqa: F401
 from brewgis.workspace.built_forms.models import PlaceTypeBuildingTypeMix  # noqa: F401
 from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F401
 from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
+
+
+def validate_projected_srid(value: int) -> None:
+    """Refuse an SRID that cannot measure planar distances and areas.
+
+    ``local_srid`` is the CRS every analysis measurement of the workspace is
+    taken in, so it must be a projected CRS with one linear unit — the rule
+    ``crs.metres_per_unit`` enforces for the SQLMesh models that read it.
+    """
+    try:
+        metres_per_unit(value)
+    except (CRSError, ValueError) as error:
+        raise ValidationError(str(error)) from error
+
+
+#: Directory under ``MEDIA_ROOT`` holding each imported workspace's unpacked
+#: packages, one subdirectory per workspace pk (``services.workspace_package``).
+WORKSPACE_PACKAGES_DIR = "workspace_packages"
+
+LOCAL_SRID_HELP_TEXT = (
+    "EPSG code of the projected CRS this workspace's distances and areas "
+    "are measured in (e.g. 3310 California Albers, or the UTM zone of the "
+    "area). Must be projected, with one linear unit."
+)
+
+
+class ConstraintSource(models.TextChoices):
+    PUBLIC = "public", "FEMA flood zones and NWI wetlands, fetched over the extent"
+    PACKAGE = "package", "Shipped in the workspace package"
+
+
+class TripLengthSource(models.TextChoices):
+    GRAVITY = "gravity", "Gravity model rescaled to the target regional mean"
+    PACKAGE = "package", "Reference trip-length zones shipped in the workspace package"
+
+
+class PublicDataSource(models.TextChoices):
+    FETCH = "fetch", "Fetched over the extent when an analysis needs it"
+    PACKAGE = "package", "Shipped in the workspace package"
 
 
 class Workspace(models.Model):
@@ -55,9 +99,65 @@ class Workspace(models.Model):
             "is never modified."
         ),
     )
+    # ── Analysis inputs ──────────────────────────────────────────────
+    # Everything a scenario's analysis reads besides its parcels and Building
+    # Types is resolved from these fields by ``sqlmesh/macros/workspace_blueprints.py``
+    # into the workspace's own ``wsp<pk>`` models.
+    local_srid = models.PositiveIntegerField(
+        validators=[validate_projected_srid],
+        help_text=LOCAL_SRID_HELP_TEXT,
+    )
+    extent = gis_models.PolygonField(
+        srid=4326,
+        null=True,
+        blank=True,
+        help_text=(
+            "Bounding box of the base layer (EPSG:4326): the area public analysis "
+            "inputs are fetched over. Set from the base table when it is adopted, "
+            "or from the package manifest on import."
+        ),
+    )
+    constraint_source = models.CharField(
+        max_length=16,
+        choices=ConstraintSource.choices,
+        default=ConstraintSource.PUBLIC,
+        help_text="Where env_constraint's constraint layers come from.",
+    )
+    trip_length_source = models.CharField(
+        max_length=16,
+        choices=TripLengthSource.choices,
+        default=TripLengthSource.GRAVITY,
+        help_text="Where the vmt trip lengths come from.",
+    )
+    public_data_source = models.CharField(
+        max_length=16,
+        choices=PublicDataSource.choices,
+        default=PublicDataSource.FETCH,
+        help_text="Where the food outlets and the road network come from.",
+    )
+    package_dir = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=(
+            "Directory under MEDIA_ROOT holding the unpacked workspace package this "
+            "workspace was imported from; blank when it was not imported."
+        ),
+    )
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def input_schema(self) -> str:
+        """Schema of this workspace's analysis-input models (``wsp<pk>``)."""
+        return workspace_schema_name(self.pk)
+
+    def package_root(self) -> Path | None:
+        """Absolute path of the unpacked package; ``None`` when the workspace was not imported."""
+        if not self.package_dir:
+            return None
+        return Path(settings.MEDIA_ROOT) / self.package_dir
 
     def effective_base_table(self) -> str:
         """The base layer in effect: the built-form fill output when enabled, else ``base_table``."""
@@ -592,6 +692,7 @@ class DataImportRun(models.Model):
         ("ejscreen", "EJScreen Environmental Justice"),
         ("health_rankings", "County Health Rankings"),
         ("lehd", "LEHD Employment"),
+        ("package", "Workspace Package"),
         ("parkserve", "ParkServe Park Data"),
         ("poi", "Points of Interest"),
         ("raster", "Raster Data"),
@@ -639,6 +740,47 @@ class DataImportRun(models.Model):
 
     def __str__(self) -> str:
         return f"DataImportRun #{self.pk} [{self.import_type}] ({self.status})"
+
+
+class WorkspaceExport(models.Model):
+    """One export of a workspace as a workspace package.
+
+    The package (``services/workspace_package.py``) is written by a Celery task;
+    this row tracks it and holds the finished zip for download.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, related_name="exports"
+    )
+    include_public_data = models.BooleanField(
+        default=False,
+        help_text=(
+            "Ship the workspace's food outlets and road network in the package, "
+            "so the importing server never fetches them."
+        ),
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    file = models.FileField(upload_to="workspace_exports/", blank=True)
+    error_log = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"WorkspaceExport #{self.pk} of {self.workspace_id} ({self.status})"
 
 
 class ConstraintOperator(models.TextChoices):

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from django import forms
 from django.contrib.auth.decorators import user_passes_test
 from django.db import connection
 from django.db.models import Q
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.shortcuts import redirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from brewgis.workspace.analysis.run_health import reconcile_abandoned_runs
 from brewgis.workspace.built_forms.models import BuildingType
@@ -174,8 +177,8 @@ def build_analysis_modules(workspace: Workspace) -> list[dict[str, object]]:
 
     water_energy_status = _prereq_status(allocated_parcels_ready, density_factors_ready)
     status_by_key: dict[str, str] = {
-        # The region's constraint layers are a SQLMesh dependency the run
-        # builds itself (``brewgis.<region>.constraint_layers``).
+        # The workspace's constraint layers are a SQLMesh dependency the run
+        # builds itself (``brewgis.wsp<pk>.constraint_layers``).
         "env_constraint": _prereq_status(base_parcels_ready),
         "core": _prereq_status(scenario_ready, base_parcels_ready),
         "water_demand": water_energy_status,
@@ -245,11 +248,29 @@ def build_catalog_context(workspace: Workspace) -> dict[str, object]:
     }
 
 
+class WorkspaceSettingsForm(forms.ModelForm):
+    """Workspace-level settings editable from the hub page (not admin)."""
+
+    class Meta:
+        model = Workspace
+        fields = ["local_srid"]
+        widgets = {
+            "local_srid": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
+        }
+
+
 @user_passes_test(lambda u: u.is_authenticated)
 def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the workspace detail hub page."""
     workspace = get_object_or_404(Workspace, pk=pk)
+    return _render_detail(
+        request, workspace, settings_form=WorkspaceSettingsForm(instance=workspace)
+    )
 
+
+def _render_detail(
+    request: HttpRequest, workspace: Workspace, *, settings_form: WorkspaceSettingsForm
+) -> HttpResponse:
     county_q = Q()
     for entry in workspace.county_fips_list:
         county_q |= Q(
@@ -269,7 +290,26 @@ def workspace_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "region_summary": _build_region_summary(workspace),
         "analysis_modules": build_analysis_modules(workspace),
         "recent_runs": recent_runs,
+        "settings_form": settings_form,
+        "exports": workspace.exports.all()[:10],
+        # The last build of an imported workspace's packaged base canvas.
+        "package_build": DataImportRun.objects.filter(
+            workspace=workspace, import_type="package"
+        ).first(),
         **build_catalog_context(workspace),
     }
 
     return render(request, "workspace/workspace_detail.html", context)
+
+
+@user_passes_test(lambda u: u.is_authenticated)
+@require_POST
+def workspace_settings_update(request: HttpRequest, pk: int) -> HttpResponse:
+    """Save workspace-level settings (e.g. local SRID) from the hub page."""
+    workspace = get_object_or_404(Workspace, pk=pk)
+    form = WorkspaceSettingsForm(request.POST, instance=workspace)
+    if not form.is_valid():
+        workspace.refresh_from_db()
+        return _render_detail(request, workspace, settings_form=form)
+    form.save()
+    return redirect("workspace:workspace_detail", pk=pk)

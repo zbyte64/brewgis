@@ -19,6 +19,7 @@ import pytest
 
 from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.services.preflight import PreflightError
+from tests.factories import ANALYSIS_EXTENT
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
 
@@ -49,7 +50,9 @@ class TestRunAnalysisScenarioInputs:
     """Tests for how ``run_analysis`` resolves and records a scenario's inputs."""
 
     def setup_method(self):
-        self.workspace = WorkspaceFactory(base_table="fresno.base_canvas_reconciled")
+        self.workspace = WorkspaceFactory(
+            base_table="fresno.base_canvas_reconciled", extent=ANALYSIS_EXTENT
+        )
         self.scenario = ScenarioFactory(
             workspace=self.workspace, scenario_type=ScenarioType.ALTERNATIVE
         )

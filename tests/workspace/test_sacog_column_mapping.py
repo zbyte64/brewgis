@@ -1,7 +1,8 @@
 """Tests for ``services/sacog_column_mapping.build_materialized_select_sql``.
 
-The projection is the whole contract of ``materialize_sacog_base_canvas``: what
-a v1 SACOG table's columns become in an adoptable base canvas table. It is pure
+The projection is the whole contract of the SACOG v1 package's base canvas
+(``services/sacog_v1_package.py``): what a v1 SACOG table's columns become in a
+base canvas every workspace server can import. It is pure
 string building over ``BaseCanvasSchema`` + ``ALL_MAPPINGS``, so these tests pin
 the decisions a live run would otherwise only reveal 500k rows later — the parcel
 key, the geometry CRS, and where a truncated or mistyped value could come from.

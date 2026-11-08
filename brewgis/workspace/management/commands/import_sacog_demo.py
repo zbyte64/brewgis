@@ -3,12 +3,13 @@
 The snapshot workspace is one of the two SACOG workspaces: it carries the
 UrbanFootprint v1 region base canvas as imported, and is compared with the
 workspace on ``sacog.base_canvas_reconciled`` (the reconstruction from public
-data) to validate the base layer construction. Its base canvas lives in the
-``sacog_v1`` schema, which is the ``sacog_v1`` analysis region
-(``region_blueprints.analysis_region_profiles``), so its analysis uses the data
-the snapshot shipped with: its streams/wetlands/vernal pools
-(``sacog_v1/constraint_layers.sql``), its SACSIM trip-length zones, and the v1
-built forms this command extracts.
+data) to validate the base layer construction. The snapshot reaches its
+workspace the way any exported workspace reaches another server: as a
+workspace package (``services.sacog_v1_package`` writes it,
+``services.workspace_package.attach_package`` attaches it), so its analysis
+reads the data the snapshot shipped with — its streams/wetlands/vernal pools,
+its SACSIM trip-length zones and the v1 built forms this command extracts —
+through the same per-workspace input models as every other workspace.
 
 Usage:
     python manage.py import_sacog_demo [--step STEP] [--force]
@@ -17,20 +18,14 @@ Steps:
     all         — full pipeline (default)
     discover    — schema discovery & manifest generation
     built_forms — complete the Building Type library, then extract the v1 built forms
-    workspace   — create workspace, scenario, layers
-    base_canvas — materialize the base canvas table over the v1 parcels
+    package     — write the snapshot as a package, attach it and build its base canvas
+    workspace   — create the base scenario and register the v1 layers
     analysis    — run analysis pipeline
     validate    — imputation validation report
 
-The base canvas is a *table* materialized with
-``sacog_column_mapping.build_materialized_select_sql``, the same projection
-``materialize_sacog_base_canvas`` loads its adoptable canvas from: every column
-is cast to the type ``BaseCanvasSchema`` declares, the parcel key is the source
-``geography_id`` and the geometry is reprojected from the source CRS (3310) to
-the contract's ``GEOMETRY(MultiPolygon, 4326)``. That is what makes the table
-tileable, adoptable through the base canvas picker, and readable by the
-blueprinted analysis models — and it fills the contract's NOT NULL columns as it
-loads, so it needs no separate NULL-filling pass.
+``package`` on an existing SACOG v1 workspace converts it in place: its
+scenarios, paints and runs stay, and its base table becomes the packaged
+``wsp<pk>.base_canvas`` (the same parcels, keyed on the v1 ``geography_id``).
 """
 
 from __future__ import annotations
@@ -42,22 +37,17 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
-from brewgis.workspace.services.sacog_column_mapping import V1_BASE_TABLE
-
 logger = logging.getLogger(__name__)
 
 # How often the analysis step re-reads its run while a Celery worker executes it.
 RUN_POLL_SECONDS = 5
 
 WORKSPACE_NAME = "SACOG v1"
-# The ``sacog_v1`` analysis region: the base canvas's schema decides which
-# region data the workspace's analysis reads (``fetch_clone.workspace_region``).
+# The workspace's own schema (its uploads and exported Building Types).
 WORKSPACE_SCHEMA = "sacog_v1"
 SCENARIO_NAME = "base"
 BASE_YEAR = 2012
 HORIZON_YEAR = 2050
-
-BASE_CANVAS_TABLE = "base_canvas"
 
 SCENARIO_SLUG = "base"
 
@@ -92,8 +82,8 @@ class Command(BaseCommand):
                 "all",
                 "discover",
                 "built_forms",
+                "package",
                 "workspace",
-                "base_canvas",
                 "analysis",
                 "validate",
             ],
@@ -117,8 +107,8 @@ class Command(BaseCommand):
         steps_to_run = [
             "discover",
             "built_forms",
+            "package",
             "workspace",
-            "base_canvas",
             "analysis",
             "validate",
         ]
@@ -201,31 +191,22 @@ class Command(BaseCommand):
         )
 
     def _resolve_workspace(self) -> Any:
-        """Get-or-create the snapshot workspace, pointed at the snapshot's base canvas.
+        """Get-or-create the snapshot workspace.
 
-        Get-or-create rather than create because ``built_forms`` and
-        ``base_canvas`` may run before the ``workspace`` step. An existing
-        workspace is repaired rather than left alone: one left on the
-        ``base_table`` column's default (``public.base_canvas``) has the analysis
-        blueprints read a canvas that has nothing to do with the snapshot.
+        Get-or-create rather than create because ``built_forms`` and ``package``
+        run before the ``workspace`` step. Its base table and analysis inputs
+        are the package's, set by the ``package`` step.
         """
         from brewgis.workspace.models import Workspace
+        from brewgis.workspace.services.sacog_v1_package import V1_SRID
 
-        base_table = f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}"
         workspace, _created = Workspace.objects.get_or_create(
             name=WORKSPACE_NAME,
-            defaults={
-                "db_schema": WORKSPACE_SCHEMA,
-                "base_table": base_table,
-            },
+            defaults={"db_schema": WORKSPACE_SCHEMA, "local_srid": V1_SRID},
         )
-        if (workspace.db_schema, workspace.base_table) != (
-            WORKSPACE_SCHEMA,
-            base_table,
-        ):
+        if workspace.db_schema != WORKSPACE_SCHEMA:
             workspace.db_schema = WORKSPACE_SCHEMA
-            workspace.base_table = base_table
-            workspace.save(update_fields=["db_schema", "base_table"])
+            workspace.save(update_fields=["db_schema"])
         return workspace
 
     # ── Step: workspace ───────────────────────────────────────────────
@@ -307,59 +288,35 @@ class Command(BaseCommand):
                 layer.save(update_fields=["db_schema"])
         return count
 
-    def _step_base_canvas(self, *, force: bool = False) -> None:
-        """Materialize the base canvas table over the v1 parcels."""
-        self.stdout.write("Phase 2/5: Base Canvas Materialization...")
+    def _step_package(self, *, force: bool = False) -> None:
+        """Write the snapshot as a workspace package, attach it and build its base canvas.
 
-        from django.core.management import call_command
-
-        # The projection, the DDL and the contract verification are
-        # ``materialize_sacog_base_canvas``'s — one implementation of "a v1 table
-        # as an adoptable base canvas", not a second one here. It also verifies
-        # the result against the projection column by column and checks that the
-        # base canvas picker will offer it, neither of which this command would
-        # get around to.
-        target = f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}"
-        call_command(
-            "materialize_sacog_base_canvas",
-            source_table=V1_BASE_TABLE,
-            target_table=target,
-            replace=force,
-            stdout=self.stdout,
-        )
-
-        self._register_base_canvas_layer(self._resolve_workspace())
-        self._promote_base_canvas_model(target)
-        self.stdout.write(self.style.SUCCESS("  ✓ Base canvas ready"))
-
-    def _promote_base_canvas_model(self, target: str) -> None:
-        """Promote the base canvas's model into ``prod`` so the analysis can read it.
-
-        The analysis reads the workspace's parcels by the canvas's *model* name
-        (``sqlmesh/macros/analysis_blueprints.py``: the base canvas, whichever
-        layer that is) and SQLMesh resolves such a name against its
-        *environments*, not against the project: the declaration in
-        ``sqlmesh/external_models.yaml`` says which physical table the name
-        stands for, but a snapshot that was never promoted is still unknown to
-        ``ExecutionContext.resolve_table`` — which every Python analysis model
-        calls for its inputs at plan time, whether or not it ends up reading
-        them. So the canvas has to be promoted once, before the first plan that
-        names it; ``pipeline._network_distance_inputs`` selects the region road
-        networks it routes over for the same reason.
-
-        Nothing is built or restated: the rows are already in the table this
-        model stands for, and re-promoting an unchanged snapshot is a no-op.
+        The package carries the workspace's Building Types as the library, so
+        the ``built_forms`` step runs first; attaching keeps the workspace's
+        own library (it is the same one) and every scenario, paint and run.
         """
-        from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
+        self.stdout.write("Phase 2: Workspace package...")
 
-        run_sqlmesh_plan(
-            environment="prod",
-            select=[f"brewgis.{target}"],
-            skip_tests=True,
-            auto_apply=True,
-            no_prompts=True,
+        import tempfile
+        from pathlib import Path
+
+        from brewgis.workspace.services.sacog_v1_package import build_sacog_v1_package
+        from brewgis.workspace.services.workspace_package import attach_package
+        from brewgis.workspace.services.workspace_package import build_package_base
+
+        workspace = self._resolve_workspace()
+        with tempfile.TemporaryDirectory(prefix="brewgis-sacog-v1-") as tmp:
+            archive = build_sacog_v1_package(
+                workspace, Path(tmp) / "sacog_v1.brewgis.zip"
+            )
+            manifest = attach_package(workspace, archive, replace_library=False)
+        rows = {part.kind.value: part.rows for part in manifest.parts}
+        self.stdout.write(f"  ✓ Package attached: {rows}")
+        build_package_base(workspace)
+        workspace.refresh_from_db()
+        self.stdout.write(
+            self.style.SUCCESS(f"  ✓ Base canvas ready: {workspace.base_table}")
         )
-        self.stdout.write(f"  ✓ Promoted brewgis.{target} into prod")
 
     # ── Step: analysis ────────────────────────────────────────────────
 
@@ -389,7 +346,7 @@ class Command(BaseCommand):
             ) from None
 
         # Check prerequisites
-        self._check_prerequisites()
+        self._check_prerequisites(ws)
 
         # Export built forms for analysis pipeline
         self._export_built_forms(ws)
@@ -426,46 +383,27 @@ class Command(BaseCommand):
         # Verify output tables
         self._verify_output_tables(scenario)
 
-    def _check_prerequisites(self) -> None:
-        """Check that the environment and tables are ready for analysis."""
+    def _check_prerequisites(self, ws: Any) -> None:
+        """Refuse to analyze before the ``package`` step has built the base canvas.
+
+        Everything else the analysis reads comes from the workspace's package
+        and its input models, which the run builds itself.
+        """
         from django.db import connection
 
-        required_tables = [
-            (V1_BASE_TABLE, "v1 base parcel table"),
-            (
-                f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}",
-                "materialized base canvas table",
-            ),
-            ("public.sacog_building_types_may14", "SACOG v1 built-type catalogue"),
-            ("public.sac_cnty_climate_zones", "climate zones"),
-            ("public.elk_grove_base_transit_stops", "transit stops"),
-            ("public.sac_cnty_streams", "streams constraint layer"),
-            ("public.sac_cnty_wetlands", "wetlands constraint layer"),
-            ("public.sac_cnty_vernal_pools", "vernal-pool constraint layer"),
-            # Read by the sacog_v1 analysis region (sacog_v1/constraint_layers.sql,
-            # analysis_region_profiles' trip_length_table), never named here.
-            ("public.elk_grove_vmt_base_trip_lengths", "SACSIM trip-length zones"),
-        ]
-
-        missing = []
-        for table, desc in required_tables:
-            schema, tbl = table.split(".")
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT count(*) FROM information_schema.tables WHERE table_schema=%s AND table_name=%s",
-                    [schema, tbl],
-                )
-                if cursor.fetchone()[0] == 0:
-                    missing.append(f"{table} ({desc})")
-
-        if missing:
-            for m in missing:
-                self.stdout.write(self.style.WARNING(f"  ⚠ Missing: {m}"))
-            self.stdout.write(
-                self.style.WARNING(
-                    "  ⚠ Some prerequisites are missing — analysis may fail"
-                )
+        schema, _, table = ws.base_table.partition(".")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema=%s AND table_name=%s",
+                [schema, table],
             )
+            exists = cursor.fetchone()[0] > 0
+        if not ws.package_dir or not exists:
+            msg = (
+                f"Workspace '{WORKSPACE_NAME}' has no packaged base canvas "
+                f"({ws.base_table!r}). Run '--step package' first."
+            )
+            raise CommandError(msg)
 
     def _export_built_forms(self, ws: Any) -> None:
         """Export BuildingType records to the workspace schema."""
@@ -479,31 +417,6 @@ class Command(BaseCommand):
             count = cursor.fetchone()[0]
         self.stdout.write(
             f"  ✓ Exported {count} built forms to {WORKSPACE_SCHEMA}.built_forms"
-        )
-
-    def _register_base_canvas_layer(self, ws: Any) -> None:
-        """Register the materialized base canvas as a Layer record.
-
-        Update-or-create, like ``_resolve_workspace``: an existing layer of the
-        same key is repointed at the snapshot's table rather than left on
-        whatever it read before.
-        """
-        from brewgis.workspace.models import Layer
-
-        Layer.objects.update_or_create(
-            workspace=ws,
-            key=BASE_CANVAS_TABLE,
-            defaults={
-                "name": f"SACOG Base Canvas ({BASE_CANVAS_TABLE})",
-                "description": f"Base canvas materialized from v1 {V1_BASE_TABLE}",
-                "db_table": BASE_CANVAS_TABLE,
-                # Left blank it would inherit the workspace schema, which is
-                # where the table is — stating it keeps the layer readable even
-                # if the workspace's ``db_schema`` is repointed later.
-                "db_schema": WORKSPACE_SCHEMA,
-                "layer_source": f"{WORKSPACE_SCHEMA}.{BASE_CANVAS_TABLE}",
-                "geometry_type": "fill",
-            },
         )
 
     def _verify_output_tables(self, scenario: Any) -> None:
@@ -550,10 +463,8 @@ class Command(BaseCommand):
             run_validation_report,
         )
 
-        results = run_validation_report(
-            scenario_schema=WORKSPACE_SCHEMA,
-            base_canvas_view=BASE_CANVAS_TABLE,
-        )
+        schema, _, table = self._resolve_workspace().base_table.partition(".")
+        results = run_validation_report(scenario_schema=schema, base_canvas_view=table)
 
         if results:
             self.stdout.write(self.style.SUCCESS("  ✓ Validation complete"))

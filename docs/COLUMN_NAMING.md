@@ -386,26 +386,26 @@ construction: **SACOG Reconstruction**, on `sacog.base_canvas_reconciled` (the
 region pipeline's reconstruction from public data), and **SACOG v1**, on the
 UrbanFootprint v1 database snapshot's region canvas
 (`public.sac_cnty_region_base_canvas`) as imported. Each is analyzed against its
-own data — the base table's schema is the analysis region
-(`region_blueprints.analysis_region_profiles`): the reconstruction reads public
+own data — a workspace's analysis inputs are its own (`Workspace.constraint_source`,
+`trip_length_source`, `public_data_source`): the reconstruction reads public
 FEMA/NWI constraint layers and the gravity trip-length fallback, the snapshot
-its own streams/wetlands/vernal pools and SACSIM zones.
+the streams/wetlands/vernal pools and SACSIM zones its package carries.
 
 The v1 table lacks a base canvas' other columns (`area_dev_condition`, the
 `emp_*` breakdowns, …), so it cannot be adopted as a workspace's base canvas
-directly. `import_sacog_demo` (and `make sacog-base-canvas` alone) materializes
-it as `sacog_v1.base_canvas` with the full 85-column set — in the `sacog_v1`
-schema, which is what makes a workspace on it the `sacog_v1` analysis region:
+directly. `import_sacog_demo` writes it, projected onto the full 85-column set,
+as a workspace package (`services/sacog_v1_package.py`) and attaches the package
+to the *SACOG v1* workspace, whose base table becomes the packaged
+`wsp<pk>.base_canvas` — the same path any other server's exported workspace
+takes:
 
 ```bash
-python manage.py import_sacog_demo            # workspace, v1 built forms, canvas, analysis
-python manage.py materialize_sacog_base_canvas  # the canvas table alone
+python manage.py import_sacog_demo                  # workspace, v1 built forms, package, analysis
+python manage.py import_sacog_demo --step package   # (re)attach the package only
 ```
 
 Three decisions distinguish the projection from what the v1 table itself holds
-(`services/sacog_column_mapping.py`, `build_materialized_select_sql`) — and they
-are the reason the snapshot canvas is a materialized table rather than a view
-over the v1 table:
+(`services/sacog_column_mapping.py`, `build_materialized_select_sql`):
 
 - `parcel_id` and `geography_id` carry the v1 `geography_id` verbatim, not a
   `ROW_NUMBER()`. The comparison pipeline and the models join SACOG parcels by
@@ -418,10 +418,11 @@ over the v1 table:
   insert instead of being invented. `land_use` and `assessor_use_code` have no
   v1 counterpart and are empty.
 
-Rebuilding truncates and reloads, so the scenario canvas views reading the table
-stay valid; `--replace` drops it first and PostgreSQL cascades that to those
-views. Restoring the SACOG demo database drops and recreates the `public` v1
-tables, so re-run the command afterwards.
+Re-attaching unpacks the new package under a new directory (named after its
+manifest digest), so the packaged base canvas and every scenario canvas over it
+rebuild in the same plan while the parcel keys — and so every paint — stay.
+Restoring the SACOG demo database drops and recreates the `public` v1 tables,
+so re-run `--step package` afterwards.
 
 ### An imported canvas the analysis reads
 
@@ -432,14 +433,15 @@ not a model — anything the picker offers as an imported table — therefore ne
 two things before a scenario on it can be analysed:
 
 - an entry in `brewgis/sqlmesh/external_models.yaml` naming the table, so the
-  name stands for something (`"brewgis"."sacog_v1"."base_canvas"` is the
-  SACOG v1 snapshot's);
+  name stands for something;
 - that entry **promoted** into the environment, because
   `ExecutionContext.resolve_table` looks the name up in the plan's snapshots and
   every Python analysis model calls it for its inputs whether or not it ends up
-  reading them. `import_sacog_demo --step base_canvas` does this for its own
-  canvas; a workspace adopted through the base canvas picker needs its
-  declaration added by hand.
+  reading them.
+
+A workspace package avoids both: its base canvas is a model of the workspace's
+own schema (`models/workspace_inputs/packaged_base_canvas.py`), built and
+promoted by the import.
 
 Neither is needed for a base canvas a SQLMesh model publishes
 (`fresno.base_canvas_reconciled`): the model is already in the environment.

@@ -24,6 +24,17 @@ RESULT_SCHEMA_PREFIX = "analysis__scenario_"
 RESULT_SCHEMA_TEMPLATE = RESULT_SCHEMA_PREFIX + "{pk}"
 """Template for the result schema, formatted with the scenario primary key."""
 
+WORKSPACE_SCHEMA_PREFIX = "wsp"
+"""Schema segment holding one workspace's analysis-input models: ``wsp<workspace_pk>``.
+
+Its base canvas (when the workspace was imported from a package), constraint
+layers, trip-length zones, food outlets and road network — see
+``macros/workspace_blueprints.py``. Short for the same reason as
+``MODEL_SCHEMA_PREFIX``: SQLMesh's physical names are
+``sqlmesh__<schema>.<schema>__<table>__<version>`` under Postgres' 63-character
+identifier limit.
+"""
+
 SQLMESH_PROJECT_NAME = "brewgis"
 """Catalog/project the models are qualified with (see ``sqlmesh/config.py``)."""
 
@@ -31,6 +42,11 @@ SQLMESH_PROJECT_NAME = "brewgis"
 def model_fqn(model_name: str, scenario_pk: int | str) -> str:
     """SQLMesh FQN of the per-scenario model *model_name* belongs to."""
     return f"{SQLMESH_PROJECT_NAME}.{MODEL_SCHEMA_PREFIX}{scenario_pk}.{model_name}"
+
+
+def workspace_schema_name(workspace_pk: int | str) -> str:
+    """Schema holding *workspace_pk*'s analysis-input models."""
+    return f"{WORKSPACE_SCHEMA_PREFIX}{workspace_pk}"
 
 
 def result_schema_name(scenario_id: int | str) -> str:

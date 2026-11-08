@@ -38,6 +38,14 @@
                 role="tab">Upload File</button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link {% if active_tab == 'package' %}active{% endif %}"
+                id="package-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#package"
+                type="button"
+                role="tab">Workspace Package</button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link {% if active_tab == 'poi' %}active{% endif %}"
                 id="poi-tab"
                 data-bs-toggle="tab"
@@ -72,6 +80,23 @@
             <h5 class="card-title">Upload GIS File</h5>
             <p class="card-text">Import a shapefile, GeoJSON, or other GIS file into the database.</p>
             <a href="{% url 'workspace:upload' %}" class="btn btn-primary">Upload File &rarr;</a>
+          </div>
+        </div>
+      </div>
+      <!-- Tab: Workspace Package -->
+      <div class="tab-pane fade {% if active_tab == 'package' %}show active{% endif %}"
+           id="package"
+           role="tabpanel">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Import Workspace Package</h5>
+            <p class="card-text">
+              Create a new workspace from a package another BrewGIS server exported: its base layer,
+              Building Types and the analysis inputs it shipped. Anything it did not ship is fetched over
+              the workspace extent the first time an analysis needs it.
+            </p>
+            <a href="{% url 'workspace:import_workspace_package' %}"
+               class="btn btn-primary">Import Package &rarr;</a>
           </div>
         </div>
       </div>

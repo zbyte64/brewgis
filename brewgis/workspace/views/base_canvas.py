@@ -21,7 +21,6 @@ read — is resolved in one place, ``Workspace.effective_base_table``.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -33,26 +32,15 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic.edit import FormView
 
-from brewgis.sqlmesh.macros.built_form_fill_blueprints import MODEL_SCHEMA
-from brewgis.workspace.analysis.layer_registry import BASE_CANVAS_LAYER_KEY
-from brewgis.workspace.analysis.layer_registry import register_result_layer
-from brewgis.workspace.analysis.sqlmesh_runner import purge_models_from_environments
-from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
-from brewgis.workspace.models import ScenarioType
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.scenario_canvas import canvas_model_selector
-from brewgis.workspace.services.scenario_canvas import modeled_scenarios
-from brewgis.workspace.services.scenario_canvas import purge_scenario_canvas_tiles
 from brewgis.workspace.services.sqlmesh_tables import list_base_canvas_candidates
-from brewgis.workspace.services.tile_server import ensure_martin_source
+from brewgis.workspace.services.workspace_base import adopt_base_table
 from brewgis.workspace.views.built_forms import HtmxResponseMixin
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
     from django.http import HttpResponse
     from django.http import HttpResponseBase
-
-logger = logging.getLogger(__name__)
 
 
 def _base_canvas_choices() -> list[tuple[str | None, list[tuple[str, str]]]]:
@@ -75,15 +63,6 @@ def _base_canvas_choices() -> list[tuple[str | None, list[tuple[str, str]]]]:
         for label, options in (("SQLMesh models", models), ("Imported tables", tables))
         if options
     ]
-
-
-def _fill_model_fqn(workspace_pk: int) -> str:
-    """SQLMesh's name for *workspace_pk*'s built-form fill model.
-
-    Mirrors ``services.scenario_canvas.canvas_model_fqn``: the identifier parts
-    are double-quoted so the FQN survives selector parsing.
-    """
-    return f'brewgis."{MODEL_SCHEMA}"."fill_{workspace_pk}"'
 
 
 class SelectBaseCanvasForm(forms.Form):
@@ -139,90 +118,9 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         return reverse(self.success_url_name, args=[self.workspace.pk])
 
     def form_valid(self, form: Any) -> HttpResponse:
-        source = form.cleaned_data["base_table"]
-        fill = form.cleaned_data["fill_built_form"]
-        # Persisted *before* the plan: ``built_form_fill_profiles()`` reads
-        # these columns while loading the project, so the fill model only
-        # exists in the plan that is about to run once the flag is on disk.
-        self.workspace.fill_built_form = fill
-        self.workspace.base_table = source
-        self.workspace.save(update_fields=["base_table", "fill_built_form"])
-
-        # The fill and the canvas models over it go into a *single* plan. Any
-        # plan promotes the whole environment's virtual layer, which recreates
-        # every snapshot's view — including the canvases whose base this form
-        # just changed. A canvas that a plan selects but does not *build* is
-        # promoted anyway, with its view pointed at a physical object the plan
-        # never created; that fails the promotion, which fails this request
-        # before the canvases are ever rebuilt, and leaves the state broken for
-        # the next plan too. Building both in one plan leaves no such window.
-        canvas_scenarios = modeled_scenarios(
-            self.workspace.scenarios.filter(scenario_type=ScenarioType.ALTERNATIVE)
-        )
-        selectors = [canvas_model_selector(scenario) for scenario in canvas_scenarios]
-        if fill:
-            # The selected source model is already materialized (the picker only
-            # offers existing tables), so the fill plus the canvases over it are
-            # the whole selection.
-            selectors.insert(0, _fill_model_fqn(self.workspace.pk))
-        else:
-            # Flipping the flag off de-lists this workspace's fill model from
-            # the blueprint; drop the now-orphaned snapshot so a later plan
-            # never promotes a model the project no longer defines.
-            purge_models_from_environments([_fill_model_fqn(self.workspace.pk)])
-        if selectors:
-            run_sqlmesh_plan(
-                environment="prod",
-                select=selectors,
-                # A Python model's SQLMesh fingerprint covers its *definition*,
-                # not the SQL its ``execute`` returns — so a change to the fill
-                # rule (or to the library it matches against) leaves the
-                # snapshot looking unchanged, and the workspace would keep
-                # reading a table built by the previous rule. Flipping the
-                # switch is a request to rebuild, so the fill model is always
-                # recomputed; the canvases over it follow their parent's data
-                # change into the same plan.
-                restate_models=[_fill_model_fqn(self.workspace.pk)] if fill else False,
-                # A restating plan otherwise reads every model's definition from
-                # SQLMesh's state rather than from the project (SQLMesh's own
-                # rule, with no way to opt out through ``Context.plan``) — so
-                # the fill rule that would run is the one that was in state the
-                # last time this environment was planned, and a change to
-                # ``built_form_fill`` would never reach the workspace at all.
-                # The analysis repair pass asks for the same thing for the same
-                # reason (``services.scenario_analysis``).
-                always_include_local_changes=True,
-                auto_apply=True,
-                no_prompts=True,
-            )
-        schema, table = self.workspace.effective_base_table().split(".", 1)
-        register_result_layer(
-            self.workspace.pk,
-            schema,
-            table,
-            key=BASE_CANVAS_LAYER_KEY,
-            name="Base Canvas",
-            description=f"Workspace base canvas ({self.workspace.effective_base_table()})",
-        )
-
-        # That plan rewrote the rows behind this workspace's base layer — the
-        # fill output under a stable view name, or a different source table
-        # entirely — and promoted every canvas view over it. Martin caches
-        # rendered tile bytes per source without ever looking at the request,
-        # and discovers tables only at its own startup, so without this the map
-        # keeps drawing whatever it rendered before the plan: the exact state a
-        # fill re-run exists to replace. Purge the canvas views (a new base
-        # changes their rows too) and the base layer itself, restarting Martin
-        # when it has never published one of them.
-        for scenario in canvas_scenarios:
-            purge_scenario_canvas_tiles(scenario)
-        ensure_martin_source(self.workspace.effective_base_table())
-
-        logger.info(
-            "Workspace %s base_table=%s fill_built_form=%s (planned %s)",
-            self.workspace.pk,
-            self.workspace.base_table,
-            self.workspace.fill_built_form,
-            selectors,
+        adopt_base_table(
+            self.workspace,
+            base_table=form.cleaned_data["base_table"],
+            fill_built_form=form.cleaned_data["fill_built_form"],
         )
         return super().form_valid(form)

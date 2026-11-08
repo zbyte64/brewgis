@@ -14,7 +14,7 @@
 # true that the stored values are all EPSG:4326 — a DuckDB-gateway
 # bridge really does store SRID 0, because that transfer writes
 # SRID-less WKB (see any ``*_raw.sql`` model and the probe recorded in
-# `osm/food_pois_raw.sql`). Martin then answers every tile request for
+# `workspace_inputs/food_pois_fetch_raw.sql`). Martin then answers every tile request for
 # such a source with `ST_Transform: Input geometry has unknown (0)
 # SRID`, which is why every published SQLMesh model is now a PostGIS
 # VIEW that re-tags its bridge with ST_SetSRID. `default_srid` only

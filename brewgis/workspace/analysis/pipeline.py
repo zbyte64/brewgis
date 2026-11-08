@@ -22,8 +22,6 @@ import deal
 from django.db import connection
 from django.utils import timezone
 
-from brewgis.sqlmesh.macros.region_blueprints import REGIONS
-from brewgis.sqlmesh.macros.region_blueprints import analysis_region_profiles
 from brewgis.workspace.analysis import module_registry
 from brewgis.workspace.analysis.layer_registry import register_result_layer
 from brewgis.workspace.analysis.log_capture import capture_run_log
@@ -43,9 +41,10 @@ from brewgis.workspace.analysis.sqlmesh_runner import run_sqlmesh_plan
 from brewgis.workspace.models import AnalysisRun
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import Workspace
-from brewgis.workspace.services.fetch_clone import workspace_region
 from brewgis.workspace.services.tile_server import restart_martin
 from brewgis.workspace.services.tile_server import wait_until_martin_ready
+from brewgis.workspace.services.workspace_extent import WorkspaceInputsError
+from brewgis.workspace.services.workspace_extent import workspace_inputs_error
 
 logger = logging.getLogger(__name__)
 
@@ -300,18 +299,14 @@ def run_modules_sync(
     # region's vehicle trip length.
     if "vmt" in ordered:
         selects += _trip_length_input(scenario_id)
-    # Computed before the network inputs join the selection: those are never
-    # restated (see ``_network_distance_inputs``).
+    # Computed before the workspace inputs join the selection: those are never
+    # restated (see ``_workspace_inputs``).
     restate = model_fqns_built_in("prod", selects) or None
-    if "trip_distribution" in ordered:
-        selects += _network_distance_inputs(scenario_id)
-    if "env_constraint" in ordered:
-        selects += _constraint_layer_inputs(_workspace_region(workspace_id))
-    if "food_access" in ordered:
-        region = _workspace_region(workspace_id)
-        selects += _food_access_inputs(
-            analysis_region_profiles()[region]["public_data_region"]
-        )
+    selects += _workspace_inputs(
+        ordered,
+        scenario_id=scenario_id,
+        workspace_schema=_workspace_schema(workspace_id),
+    )
 
     # The scenario's parameters — like its painted canvas — are baked into these models' blueprints when they are
     # *rendered*, and SQLMesh caches rendered model definitions on disk keyed by
@@ -345,7 +340,7 @@ def run_modules_sync(
             # A selection narrows the plan's backfill to the selected models,
             # while promotion covers every snapshot whose version the environment
             # changes. A dependency this plan re-versions but never selected — the
-            # region road network a routing module reads, say — is then promoted
+            # workspace road network a routing module reads, say — is then promoted
             # into a view over a physical table nothing built, and the run dies in
             # its promotion stage with `UndefinedTable: relation "sqlmesh__…" does
             # not exist` after backfilling everything else. Rebuild whatever the
@@ -389,41 +384,45 @@ def run_modules_sync(
     }
 
 
-def _network_distance_inputs(scenario_id: int) -> list[str]:
-    """Models trip_distribution reads that are not analysis modules.
+def _workspace_inputs(
+    ordered_modules: list[str], *, scenario_id: int, workspace_schema: str
+) -> list[str]:
+    """The workspace input models the requested modules read.
 
-    ``network_zone_distance`` and the region road network it routes over are
-    dependencies of every trip_distribution instance (see its ``execute``), so a
-    plan must be able to build them when they are new — but they are selected
-    only, never restated: their inputs are the parcel source and the Overture
-    network, not the scenario's end state, and the cached zone matrix is what
-    makes the network-distance option affordable to rerun.
+    Each is a dependency of the analysis models that read it but not an
+    analysis module, and a model is only planned when a selector names it — so
+    the inputs of exactly the requested modules are named, each with SQLMesh's
+    ``+`` upstream selector so the fetch or package bridge, the re-tag VIEW and
+    whatever else the input is built from are planned with it, and the
+    workspace input model stays the one place that decides them
+    (``macros/workspace_blueprints.py``):
 
-    The road network is selected for every pipeline region: which one a
-    scenario routes over is a blueprint fact (``public_data_region``), and a
-    built region network is a no-op in the plan.
+    - ``env_constraint`` — the constraint layers;
+    - ``food_access`` — the outlets the 1 km search counts;
+    - ``trip_distribution`` — ``network_zone_distance`` and the road network it
+      routes over (the zone matrix is cached: rerunning the network-distance
+      option is affordable because it is never restated);
+    - ``vmt`` — the trip-length zones ``trip_lengths`` assigns parcels to (an
+      empty table for a gravity workspace).
 
-    The subsegment chain is named as well: the DuckDB fetch VIEW, the bridge it
-    lands in, and the published VIEW that re-tags the bridge's SRID. A model
-    added to the project is only planned when a selector names it — the
-    vertices/edges selectors alone backfill the graph against a chain the plan
-    never created (``relation "...overture_road_subsegments" does not exist``).
-    Selected, never restated, for the same reason as the vertices and edges it
-    feeds: its inputs are the Overture release, not the scenario.
+    Selected, never restated: their inputs are the workspace's extent and
+    package, not the scenario's end state, and a built input is a no-op in the
+    plan — which is what makes each fetch happen once per workspace, when an
+    analysis first needs it.
     """
-    return [
-        module_registry.model_fqn("network_zone_distance", scenario_id),
-        *(
-            f"brewgis.{region}.{table}"
-            for region in REGIONS
-            for table in (
-                "overture_road_subsegments_raw",
-                "overture_road_subsegments",
-                "road_network_vertices",
-                "road_network_edges",
-            )
-        ),
-    ]
+    inputs: list[str] = []
+    if "env_constraint" in ordered_modules:
+        inputs.append(f"+brewgis.{workspace_schema}.constraint_layers")
+    if "food_access" in ordered_modules:
+        inputs.append(f"+brewgis.{workspace_schema}.food_pois_local")
+    if "trip_distribution" in ordered_modules:
+        inputs += [
+            module_registry.model_fqn("network_zone_distance", scenario_id),
+            f"+brewgis.{workspace_schema}.road_network_edges",
+        ]
+    if "vmt" in ordered_modules:
+        inputs.append(f"+brewgis.{workspace_schema}.trip_length_zones")
+    return inputs
 
 
 def _quarter_mile_context_input(scenario_id: int) -> list[str]:
@@ -449,8 +448,9 @@ def _trip_length_input(scenario_id: int) -> list[str]:
     """The trip-length support model the vmt / physical-activity selectors do not name.
 
     ``trip_lengths`` resolves each parcel's one-way trip length from the
-    region's reference zones — or, for a region that ships none, from the
-    gravity model's gradient rescaled to the target regional mean — and ``vmt``
+    workspace's reference zones — or, for a workspace whose package shipped
+    none, from the gravity model's gradient rescaled to the target regional
+    mean — and ``vmt``
     and ``physical_activity`` read it instead of ``trip_distribution``'s own
     length. It is not an analysis module (no ``MODULE_SQLMESH_SELECTORS``
     entry), and nothing else in a plan pulls it in: a model added to the project
@@ -465,51 +465,18 @@ def _trip_length_input(scenario_id: int) -> list[str]:
     return [module_registry.model_fqn("trip_lengths", scenario_id)]
 
 
-def _workspace_region(workspace_id: int) -> str:
-    """The region whose models the workspace's scenarios are analyzed with.
+def _workspace_schema(workspace_id: int) -> str:
+    """The schema of the workspace input models the scenario's analysis reads.
 
-    Raises ``WorkspaceRegionError`` for a workspace in no region — the launch
-    service refuses those first, so this only fires for a run started around it.
+    Raises ``WorkspaceInputsError`` for a workspace without analysis inputs —
+    the launch service refuses those first, so this only fires for a run started
+    around it.
     """
-    return workspace_region(Workspace.objects.get(pk=workspace_id))
-
-
-def _constraint_layer_inputs(region: str) -> list[str]:
-    """The region's constraint layers and everything they are built from.
-
-    ``env_constraint`` reads ``brewgis.<region>.constraint_layers`` (the region
-    comes from the workspace's base table, see ``fetch_clone.workspace_region``),
-    which is a lineage dependency of every env_constraint instance but not an
-    analysis module. A model is only planned when a selector names it, so the
-    region model is named with SQLMesh's ``+`` upstream selector: whatever
-    fetches, bridges and re-tag VIEWs a region's layers are built from are
-    planned with it, and the region model stays the one place that decides
-    them. Selected, never restated: their inputs are the source layers, not the
-    scenario, and a built chain is a no-op in the plan.
-    """
-    return [f"+brewgis.{region}.constraint_layers"]
-
-
-def _food_access_inputs(region: str) -> list[str]:
-    """Models the food-access analysis reads that are not analysis modules.
-
-    The region's outlet fetch: the PostGIS table the Overpass fetch lands in,
-    the PostGIS VIEW that restores its SRID, and the projected, indexed model
-    the 1 km search reads. All three are dependencies of every ``food_access``
-    instance and none of them is an analysis module — the fetch is per *region*
-    (the bounding box is the region's), so one build serves every scenario that
-    analyzes against it.
-
-    Named in order for the same reason as ``_network_distance_inputs`` names its
-    bridge: a model is only planned when a selector names it. Selected, never
-    restated: their inputs are OpenStreetMap and the region bounding box, not
-    the scenario's end state.
-    """
-    return [
-        f"brewgis.{region}.food_pois_raw",
-        f"brewgis.{region}.food_pois",
-        f"brewgis.{region}.food_pois_local",
-    ]
+    workspace = Workspace.objects.get(pk=workspace_id)
+    error = workspace_inputs_error(workspace)
+    if error is not None:
+        raise WorkspaceInputsError(error)
+    return workspace.input_schema
 
 
 def _unpublished_modules(

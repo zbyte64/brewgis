@@ -558,7 +558,7 @@ def config_factory(*, cache_dir: str | None = None, **variables):
                         # the food-access fetch of an unrelated node.
                         #
                         # Overpass (models/osm/poi_raw*.sql,
-                        # models/osm/food_pois_raw.sql) is slow and bursts
+                        # models/workspace_inputs/food_pois_fetch_raw.sql) is slow and bursts
                         # into outright stalls: measured 2026-09-28 against the
                         # Kumi mirror, a one-element bounding-box probe answered
                         # in 43 s / 144 s / 155 s / 188 s / 356 s / 639 s across
@@ -675,6 +675,18 @@ def config_factory(*, cache_dir: str | None = None, **variables):
             # Overture Transportation — road segments (used by overture road impervious)
             "overture_transport_parquet_glob": (
                 "s3://overturemaps-us-west-2/release/2026-08-19.0/"
+                "theme=transportation/type=segment/*.parquet"
+            ),
+            # Overture Transportation for the per-workspace road networks
+            # (models/workspace_inputs/road_subsegments_duckdb.sql). A workspace's
+            # inputs are fetched when one of its analyses first needs them, so
+            # this must name a release Overture still serves — it prunes
+            # releases after about two months, and a pruned glob fails with
+            # "No files found". The construction pipeline's globs above stay
+            # pinned to the release their built tables were read from: changing
+            # them re-versions every construction model that reads them.
+            "overture_workspace_transport_parquet_glob": (
+                "s3://overturemaps-us-west-2/release/2026-10-21.0/"
                 "theme=transportation/type=segment/*.parquet"
             ),
             # ---- NLCD DuckDB raster models ----

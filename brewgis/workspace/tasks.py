@@ -666,3 +666,92 @@ def run_analysis_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def
 # ────────────────────────────────────────────────────────────
 #  Scenario canvases (SQLMesh-owned views the map and tile servers read)
 # ────────────────────────────────────────────────────────────
+
+
+# ────────────────────────────────────────────────────────────
+#  Workspace packages (services/workspace_package.py)
+# ────────────────────────────────────────────────────────────
+
+
+@_celery_task(
+    bind=True,
+    # An export may build the workspace's public inputs first (a plan) and
+    # streams a whole base layer through DuckDB: sized like an analysis run.
+    soft_time_limit=settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+    time_limit=settings.ANALYSIS_TASK_TIME_LIMIT,
+)
+def export_workspace_package_task(self, export_pk: int) -> None:  # type: ignore[no-untyped-def]
+    """Write a ``WorkspaceExport``'s package and attach it to the row for download."""
+    import tempfile
+    from pathlib import Path
+
+    from django.core.files import File
+    from django.utils.text import slugify
+
+    from brewgis.workspace.models import WorkspaceExport
+    from brewgis.workspace.services.workspace_package import export_workspace_package
+
+    export = WorkspaceExport.objects.select_related("workspace").get(pk=export_pk)
+    export.status = WorkspaceExport.Status.RUNNING
+    export.save(update_fields=["status"])
+    try:
+        with tempfile.TemporaryDirectory(prefix="brewgis-export-") as tmp:
+            filename = f"{slugify(export.workspace.name) or 'workspace'}.brewgis.zip"
+            archive = export_workspace_package(
+                export.workspace,
+                include_public_data=export.include_public_data,
+                destination=Path(tmp) / filename,
+            )
+            with archive.open("rb") as handle:
+                export.file.save(f"{export.pk}/{filename}", File(handle), save=False)
+    except Exception as exc:
+        export.status = WorkspaceExport.Status.FAILED
+        export.error_log = str(exc)
+        export.completed_at = timezone.now()
+        export.save(update_fields=["status", "error_log", "completed_at"])
+        raise
+    export.status = WorkspaceExport.Status.COMPLETED
+    export.completed_at = timezone.now()
+    export.save(update_fields=["status", "file", "completed_at"])
+
+
+@_celery_task(
+    bind=True,
+    soft_time_limit=settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+    time_limit=settings.ANALYSIS_TASK_TIME_LIMIT,
+)
+def build_package_base_task(self, run_pk: int) -> None:  # type: ignore[no-untyped-def]
+    """Build an imported workspace's packaged base canvas (a ``package`` DataImportRun)."""
+    from brewgis.workspace.services.workspace_package import build_package_base
+
+    run = DataImportRun.objects.select_related("workspace").get(pk=run_pk)
+    run.status = "running"
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
+    try:
+        build_package_base(run.workspace)
+    except Exception as exc:
+        run.status = "failed"
+        run.error_log = str(exc)
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "error_log", "completed_at"])
+        raise
+    run.status = "completed"
+    run.result = {"base_table": run.workspace.base_table}
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "result", "completed_at"])
+
+
+def start_package_build(workspace: Any, *, params: dict[str, Any]) -> DataImportRun:
+    """Track and dispatch building *workspace*'s packaged base canvas.
+
+    Dispatched on commit: the task's plan loads the workspace's models from the
+    committed row (``macros/workspace_blueprints.py``).
+    """
+    from django.db import transaction
+
+    run = DataImportRun.objects.create(
+        workspace=workspace, import_type="package", params=params, status="pending"
+    )
+    transaction.on_commit(lambda: build_package_base_task.delay(run.pk))
+    return run

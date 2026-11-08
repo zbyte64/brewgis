@@ -14,6 +14,7 @@ from brewgis.workspace.services.canvas_view_manager import _qi
 from brewgis.workspace.services.scenario_analysis import drop_scenario_analysis
 from brewgis.workspace.services.scenario_analysis import reconcile_scenario_analyses
 from brewgis.workspace.services.scenario_analysis import scenario_analysis_fqns
+from tests.factories import ANALYSIS_EXTENT
 from tests.factories import AnalysisRunFactory
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
@@ -71,7 +72,9 @@ class TestReconcileScenarioAnalyses:
 
     def test_restates_the_models_a_plan_can_restate(self, db, monkeypatch):
         scenario = ScenarioFactory(
-            workspace=WorkspaceFactory(base_table="fresno.base_canvas_reconciled")
+            workspace=WorkspaceFactory(
+                base_table="fresno.base_canvas_reconciled", extent=ANALYSIS_EXTENT
+            )
         )
         AnalysisRunFactory(workspace=scenario.workspace, scenario=scenario)
         built = [f"brewgis.ascn{scenario.pk}.core_end_state"]
@@ -95,7 +98,9 @@ class TestReconcileScenarioAnalyses:
 
     def test_plans_nothing_when_no_model_has_been_built(self, db, monkeypatch):
         scenario = ScenarioFactory(
-            workspace=WorkspaceFactory(base_table="fresno.base_canvas_reconciled")
+            workspace=WorkspaceFactory(
+                base_table="fresno.base_canvas_reconciled", extent=ANALYSIS_EXTENT
+            )
         )
         AnalysisRunFactory(workspace=scenario.workspace, scenario=scenario)
         plans: list[dict] = []

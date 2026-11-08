@@ -15,6 +15,7 @@ from brewgis.workspace.symbology.generator import generate_maplibre_style
 class TestGenerator(TestCase):
     def setUp(self) -> None:
         self.workspace = Workspace.objects.create(
+            local_srid=3310,
             name="Test Workspace",
             db_schema="public",
         )

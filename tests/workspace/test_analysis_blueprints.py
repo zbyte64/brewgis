@@ -13,6 +13,7 @@ from __future__ import annotations
 import multiprocessing
 
 import pytest
+from django.contrib.gis.geos import Polygon
 from django.db import connection
 
 from brewgis.sqlmesh.macros.analysis_blueprints import _drop_inherited_connection
@@ -22,6 +23,9 @@ from brewgis.workspace.analysis.module_registry import ANALYSIS_PARAMETERS
 from tests.factories import AnalysisRunFactory
 from tests.factories import ScenarioFactory
 from tests.factories import WorkspaceFactory
+
+# A Fresno-sized bounding box: what makes a workspace have analysis inputs.
+_EXTENT = Polygon.from_bbox((-119.95, 36.6, -119.55, 36.92))
 
 
 class TestParcelKeyType:
@@ -65,8 +69,10 @@ class TestScenarioProfiles:
 
     @pytest.fixture
     def analyzed_scenario(self, db):
-        """A scenario analyzed at least once, on a SQLMesh-managed base table."""
-        workspace = WorkspaceFactory(base_table="fresno.base_canvas_reconciled")
+        """A scenario analyzed at least once, on a workspace with analysis inputs."""
+        workspace = WorkspaceFactory(
+            base_table="fresno.base_canvas_reconciled", extent=_EXTENT
+        )
         scenario = ScenarioFactory(workspace=workspace)
         AnalysisRunFactory(workspace=workspace, scenario=scenario)
         return scenario
@@ -74,20 +80,19 @@ class TestScenarioProfiles:
     def test_an_imported_base_is_the_parcel_source_itself(self, db):
         """A base canvas that is not a model is read as the table it is.
 
-        A table carrying the base-canvas columns in a region schema is a valid
-        base, so the analysis models read it directly — a model FQN would name
-        a table no model publishes. The table is created in a region schema and
-        dropped afterwards; the schema itself is left alone.
+        A table carrying the base-canvas columns in any schema is a valid base,
+        so the analysis models read it directly — a model FQN would name a table
+        no model publishes.
         """
         with connection.cursor() as cursor:
-            cursor.execute("CREATE SCHEMA IF NOT EXISTS fresno")
+            cursor.execute("CREATE SCHEMA IF NOT EXISTS blueprint_probe")
             cursor.execute(
-                "CREATE TABLE fresno.blueprint_probe_base_canvas "
+                "CREATE TABLE blueprint_probe.base_canvas "
                 "(parcel_id bigint PRIMARY KEY, geometry geometry(Polygon, 4326))"
             )
         try:
             workspace = WorkspaceFactory(
-                base_table="fresno.blueprint_probe_base_canvas"
+                base_table="blueprint_probe.base_canvas", extent=_EXTENT
             )
             scenario = ScenarioFactory(workspace=workspace)
             AnalysisRunFactory(workspace=workspace, scenario=scenario)
@@ -99,15 +104,12 @@ class TestScenarioProfiles:
             ]
         finally:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "DROP TABLE IF EXISTS fresno.blueprint_probe_base_canvas"
-                )
+                cursor.execute("DROP SCHEMA IF EXISTS blueprint_probe CASCADE")
 
-        assert profile["parcel_table"] == "fresno.blueprint_probe_base_canvas"
-        assert profile["base_canvas_table"] == "fresno.blueprint_probe_base_canvas"
+        assert profile["parcel_table"] == "blueprint_probe.base_canvas"
+        assert profile["base_canvas_table"] == "blueprint_probe.base_canvas"
         # The key type still comes from the source's own column.
         assert profile["parcel_key_type"] == "BIGINT"
-        assert profile["region"] == "fresno"
 
     def test_a_model_base_is_named_as_a_model(self, base_canvas_table):
         """The other half of the switch: a base a model publishes keeps its FQN,
@@ -124,7 +126,9 @@ class TestScenarioProfiles:
                 "(LIKE public.base_canvas INCLUDING ALL)"
             )
         try:
-            workspace = WorkspaceFactory(base_table="sacog.base_canvas_reconciled")
+            workspace = WorkspaceFactory(
+                base_table="sacog.base_canvas_reconciled", extent=_EXTENT
+            )
             scenario = ScenarioFactory(workspace=workspace)
             AnalysisRunFactory(workspace=workspace, scenario=scenario)
 
@@ -138,49 +142,42 @@ class TestScenarioProfiles:
                 cursor.execute("DROP TABLE IF EXISTS sacog.base_canvas_reconciled")
 
         assert profile["parcel_table"] == "brewgis.sacog.base_canvas_reconciled"
-        # The reconstruction is analyzed against public data only: its own
-        # region's fetches, and no SACSIM zones (those came with the snapshot).
-        assert profile["region"] == "sacog"
-        assert profile["public_data_region"] == "sacog"
-        assert profile["trip_length_table"] == ""
 
-    def test_the_snapshot_is_analyzed_against_its_own_data(self, db):
-        """The imported v1 snapshot (``sacog_v1.base_canvas``) is its own
-        analysis region: its own constraint layers and SACSIM trip-length zones,
-        and the SACOG public fetches for what it shipped no copy of."""
-        with connection.cursor() as cursor:
-            cursor.execute("CREATE SCHEMA IF NOT EXISTS sacog_v1")
-            cursor.execute(
-                "CREATE TABLE sacog_v1.blueprint_probe_base_canvas "
-                "(parcel_id bigint PRIMARY KEY, geometry geometry(Polygon, 4326))"
-            )
-        try:
-            workspace = WorkspaceFactory(
-                base_table="sacog_v1.blueprint_probe_base_canvas"
-            )
+    def test_inputs_and_crs_are_the_workspaces_own(self, db):
+        """Whatever schema its base table is in, a scenario reads its own
+        workspace's input models and measures in its workspace's CRS — two
+        workspaces over the same base table never share either."""
+        state_plane = WorkspaceFactory(
+            base_table="fresno.base_canvas_reconciled", extent=_EXTENT, local_srid=2228
+        )
+        albers = WorkspaceFactory(
+            base_table="fresno.base_canvas_reconciled", extent=_EXTENT, local_srid=3310
+        )
+        scenarios = {}
+        for workspace in (state_plane, albers):
             scenario = ScenarioFactory(workspace=workspace)
             AnalysisRunFactory(workspace=workspace, scenario=scenario)
+            scenarios[scenario.pk] = workspace
 
-            (profile,) = [
-                profile
-                for profile in analysis_blueprint_profiles("vmt")
-                if profile["scenario_pk"] == scenario.pk
-            ]
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "DROP TABLE IF EXISTS sacog_v1.blueprint_probe_base_canvas"
-                )
+        profiles = {
+            profile["scenario_pk"]: profile
+            for profile in analysis_blueprint_profiles("env_constraint")
+            if profile["scenario_pk"] in scenarios
+        }
 
-        assert profile["region"] == "sacog_v1"
-        assert profile["public_data_region"] == "sacog"
-        assert profile["trip_length_table"] == "public.elk_grove_vmt_base_trip_lengths"
+        assert {
+            pk: (profile["workspace_schema"], profile["local_srid"])
+            for pk, profile in profiles.items()
+        } == {
+            pk: (f"wsp{workspace.pk}", workspace.local_srid)
+            for pk, workspace in scenarios.items()
+        }
 
-    def test_a_workspace_in_no_region_gets_no_models(self, db):
-        """No region is substituted for a base table outside every region
-        schema: the scenario gets no analysis models (the launch service
-        refuses it as not configured), and the other scenarios still load."""
-        workspace = WorkspaceFactory(base_table="public.base_canvas")
+    def test_a_workspace_without_an_extent_gets_no_models(self, db):
+        """No area is substituted for a base table with no geometry: the scenario
+        gets no analysis models (the launch service refuses it as not
+        configured), and the other scenarios still load."""
+        workspace = WorkspaceFactory(base_table="public.base_canvas", extent=None)
         scenario = ScenarioFactory(workspace=workspace)
         AnalysisRunFactory(workspace=workspace, scenario=scenario)
 
@@ -208,19 +205,6 @@ class TestScenarioProfiles:
         # blueprint carries.
         assert profile["scenario_type"] == analyzed_scenario.scenario_type
         assert profile["model_table"] == "vmt"
-
-    def test_region_data_comes_from_the_workspace_base_table(self, analyzed_scenario):
-        """A Fresno base reads Fresno's models — ``brewgis.fresno.constraint_layers``
-        in env_constraint — and Fresno ships no reference trip-length zones."""
-        (profile,) = [
-            profile
-            for profile in analysis_blueprint_profiles("env_constraint")
-            if profile["scenario_pk"] == analyzed_scenario.pk
-        ]
-
-        assert profile["region"] == "fresno"
-        assert profile["public_data_region"] == "fresno"
-        assert profile["trip_length_table"] == ""
 
 
 class TestForkedWorkerConnections:

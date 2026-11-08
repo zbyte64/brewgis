@@ -54,7 +54,7 @@ MODEL (
     gas_eui = 'Built form gas use intensity (kWh per sq metre per year), default 50.',
     household_size = 'Household size of the assigned built form (persons); null when unset.',
     geometry = 'Parcel boundary geometry (EPSG:4326).',
-    centroid_local = 'Parcel centroid projected to the region local SRID (indexed for buffer joins).'
+    centroid_local = 'Parcel centroid projected to the workspace CRS (Workspace.local_srid) (indexed for buffer joins).'
   ),
   blueprints @analysis_blueprints('core_end_state'),
   -- The zone *bridges*, in addition to the published zone views the SELECT
@@ -139,10 +139,11 @@ MODEL (
 -- Climate zones (title24_zone, fcz_zone, eto_zone, annual_eto_mm) are the one
 -- piece of *location-derived reference* geography this model adds: they come
 -- from the statewide CEC/CIMIS SQLMesh models brewgis.california.*, which are
--- project models shared by every scenario and every region, and are assigned
+-- project models shared by every scenario and every workspace, and are assigned
 -- to the parcel by point-in-polygon on its centroid. energy_demand and
--- water_demand key their CEC baselines on them. Nothing per-region is
--- required: a Fresno scenario gets the same columns from the same models.
+-- water_demand key their CEC baselines on them. Nothing per-workspace is
+-- required; a parcel outside California gets NULL zones and the Building
+-- Type rates instead.
 --
 -- Input variables:
 --   @parcel_table:       The scenario canvas: parcel geometry, stock columns
@@ -188,11 +189,11 @@ WITH parcel_base AS (
     SELECT
         p.parcel_id,
         p.geometry,
-        @st_area_projected(p.geometry) AS area_gross_acres,
+        @workspace_area_acres(p.geometry) AS area_gross_acres,
         -- Developable acres come from the env_constraint model (gross area less
         -- the constrained overlap); the gross area is the fallback for a parcel
         -- it has no row for, which cannot happen for a canvased parcel.
-        COALESCE(ec.acres_developable, @st_area_projected(p.geometry)) AS acres_developable,
+        COALESCE(ec.acres_developable, @workspace_area_acres(p.geometry)) AS acres_developable,
         -- Stock: population / households / dwelling units (base layer).
         COALESCE(p.pop, 0.0) AS pop,
         COALESCE(p.hh, 0.0) AS hh,
@@ -249,7 +250,7 @@ WITH parcel_base AS (
         -- Climate zones: location-derived statewide reference geography, not
         -- stock, so they are assigned here (as trip_lengths assigns its own
         -- reference zones) rather than read from the base layer — every
-        -- scenario's core_end_state then shares one assignment and any region
+        -- scenario's core_end_state then shares one assignment and any workspace
         -- gets the columns for free. Point-in-polygon on the parcel *centroid*,
         -- the same rule assessor/parcel_block_groups.sql uses for block groups:
         -- LIMIT 1 keeps it deterministic for a straddler, and LEFT JOIN keeps a
@@ -413,7 +414,7 @@ SELECT
     -- joins filter parcels by a distance expressed in local units, so the
     -- radius is a constant and the join is index-driven. Never reproject the
     -- geometry for the distance itself (see the AGENTS local-unit rule).
-    ST_Transform(ST_Centroid(geometry), @local_srid()) AS centroid_local
+    ST_Transform(ST_Centroid(geometry), @workspace_srid()) AS centroid_local
 FROM parcel_base;
 
 -- post_statements

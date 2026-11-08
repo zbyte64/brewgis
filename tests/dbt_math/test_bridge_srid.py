@@ -89,13 +89,17 @@ class Bridge:
     def regional(self) -> bool:
         return "{region}" in self.published
 
+    @property
+    def per_workspace(self) -> bool:
+        return "{workspace}" in self.published
+
 
 BRIDGES: tuple[Bridge, ...] = (
     Bridge(
-        published="brewgis.{region}.food_pois",
-        raw="brewgis.{region}.food_pois_raw",
-        schema="{region}",
-        table="food_pois_raw",
+        published="brewgis.{workspace}.food_pois",
+        raw="brewgis.{workspace}.food_pois_fetch_raw",
+        schema="{workspace}",
+        table="food_pois_fetch_raw",
         ddl="osm_id bigint, name text, shop text, amenity text, food_class text, geometry geometry",
         row=f"1, 'Market', 'supermarket', '', 'healthy', {_POINT}",
         srids={"geometry": 4326},
@@ -135,10 +139,10 @@ BRIDGES: tuple[Bridge, ...] = (
         srids={"geometry": 3857, "wgs84_geometry": 4326},
     ),
     Bridge(
-        published="brewgis.{region}.overture_road_subsegments",
-        raw="brewgis.{region}.overture_road_subsegments_raw",
-        schema="{region}",
-        table="overture_road_subsegments_raw",
+        published="brewgis.{workspace}.road_subsegments",
+        raw="brewgis.{workspace}.road_subsegments_fetch_raw",
+        schema="{workspace}",
+        table="road_subsegments_fetch_raw",
         ddl=(
             "segment_id text, from_connector_id text, from_at double precision, "
             "to_connector_id text, to_at double precision, wgs84_geometry geometry"
@@ -161,10 +165,21 @@ BRIDGES: tuple[Bridge, ...] = (
 )
 
 
-def _cases() -> list[Bridge]:
-    """Every bridge, one instance per region for the regional ones."""
+def _cases(workspace_schema: str) -> list[Bridge]:
+    """Every bridge: one instance per region for the regional ones, and the
+    parity workspace's for the per-workspace analysis inputs."""
     cases: list[Bridge] = []
     for bridge in BRIDGES:
+        if bridge.per_workspace:
+            cases.append(
+                replace(
+                    bridge,
+                    published=bridge.published.format(workspace=workspace_schema),
+                    raw=bridge.raw.format(workspace=workspace_schema),
+                    schema=bridge.schema.format(workspace=workspace_schema),
+                )
+            )
+            continue
         if not bridge.regional:
             cases.append(bridge)
             continue
@@ -178,6 +193,14 @@ def _cases() -> list[Bridge]:
             for region in sorted(REGIONS)
         )
     return cases
+
+
+def _workspace_schema(scenario_schema: str) -> str:
+    """The input schema (``wsp<pk>``) of the parity scenario's workspace."""
+    from brewgis.workspace.models import Scenario
+
+    scenario = Scenario.objects.get(pk=int(scenario_schema.removeprefix("ascn")))
+    return scenario.workspace.input_schema
 
 
 def _rendered(context: Context, name: str) -> str:
@@ -196,7 +219,7 @@ def test_published_views_retag_their_bridges(parity_scenario: str) -> None:
     context = get_context(cache_dir=cache_dir)
     local_srid = int(context.config.variables["local_srid"])
     try:
-        for bridge in _cases():
+        for bridge in _cases(_workspace_schema(parity_scenario)):
             model = context.get_model(bridge.published)
             assert model is not None, bridge.published
             assert model.gateway in (None, "postgis"), (

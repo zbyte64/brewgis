@@ -22,7 +22,7 @@ class TestScenarioPublishedModel(TestCase):
     """Tests for Scenario.published and public_token fields."""
 
     def setUp(self):
-        self.workspace = Workspace.objects.create(name="Test")
+        self.workspace = Workspace.objects.create(local_srid=3310, name="Test")
         self.scenario = Scenario.objects.create(
             name="Test Scenario",
             slug="test-scenario",
@@ -69,7 +69,7 @@ class TestPublicScenarioMapView(TestCase):
 
     def setUp(self):
         self.client = Client()
-        self.workspace = Workspace.objects.create(name="Test")
+        self.workspace = Workspace.objects.create(local_srid=3310, name="Test")
         self.scenario = Scenario.objects.create(
             name="Test Scenario",
             slug="test-scenario",
@@ -174,7 +174,7 @@ class TestTogglePublishView(TestCase):
 
     def setUp(self):
         self.client = Client()
-        self.workspace = Workspace.objects.create(name="Test")
+        self.workspace = Workspace.objects.create(local_srid=3310, name="Test")
         self.scenario = Scenario.objects.create(
             name="Test Scenario",
             slug="test-scenario",
@@ -229,7 +229,7 @@ class TestTogglePublishView(TestCase):
 
     def test_toggle_wrong_workspace_returns_404(self):
         """Mismatched workspace_pk should 404."""
-        wrong_ws = Workspace.objects.create(name="Other")
+        wrong_ws = Workspace.objects.create(local_srid=3310, name="Other")
         url = reverse(
             "workspace:scenario_toggle_publish",
             args=[wrong_ws.pk, self.scenario.pk],

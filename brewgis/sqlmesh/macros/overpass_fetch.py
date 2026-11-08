@@ -5,7 +5,7 @@ Single source of truth for the OpenStreetMap tag taxonomy behind
 expressions it classifies rows with, and — through :data:`POI_CATEGORIES` — the
 category list Django's POI import form offers.
 
-It also holds the food-outlet tag set behind ``brewgis.@region.food_pois_raw``, the
+It also holds the food-outlet tag set behind ``brewgis.@{workspace_schema}.food_pois_fetch_raw``, the
 fetch the food-access analysis counts healthy and unhealthy outlets from. That
 set is deliberately separate from :data:`POI_CATEGORIES`: the import taxonomy
 classifies an element into one *category* for the map's POI layers, while food

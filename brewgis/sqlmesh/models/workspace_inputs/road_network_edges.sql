@@ -1,26 +1,26 @@
 MODEL (
-  name brewgis.@{region}.road_network_edges,
+  name brewgis.@{workspace_schema}.road_network_edges,
   kind FULL,
-  description 'Edges of the region''s undirected drivable road graph: one row per Overture subsegment (consecutive connector pair), costed by its length in metres.',
+  description 'Edges of the workspace''s undirected drivable road graph: one row per Overture subsegment (consecutive connector pair), costed by its length in metres.',
   column_descriptions (
     id = 'pgRouting edge id (dense, ordered by source, target, cost_m)',
     source = 'Vertex id (road_network_vertices.id) at the subsegment start connector',
     target = 'Vertex id (road_network_vertices.id) at the subsegment end connector',
     cost_m = 'Subsegment length in metres, the edge traversal cost',
-    geometry = 'Subsegment line in local_srid'
+    geometry = 'Subsegment line in the workspace CRS (Workspace.local_srid)'
   ),
   audits (
     not_null(columns := (id, source, target)),
     assert_column_non_negative(column_name := cost_m),
-    -- Same floor rationale as overture_intersection_points: SACOG and Fresno
-    -- both carry far more drivable subsegments than this, so the floor catches
-    -- an empty/broken subsegment bridge.
-    assert_row_count_between(min_rows := 20000, max_rows := 100000000)
+    -- A workspace extent can be a single town, so the only floor that holds
+    -- for every workspace is a non-empty graph: it still catches an
+    -- empty/broken subsegment bridge.
+    assert_row_count_greater_than_zero
   ),
-  blueprints @region_blueprints()
+  blueprints @workspace_blueprints()
 );
 
--- Region road network edges — the edge table pgr_dijkstraCost walks for
+-- Workspace road network edges — the edge table pgr_dijkstraCost walks for
 -- network_zone_distance.
 --
 -- One edge per consecutive connector pair of a drivable segment, with
@@ -42,13 +42,13 @@ WITH sub AS (
     SELECT
         from_connector_id,
         to_connector_id,
-        @local_length_metres(ST_Length(ST_LineSubstring(g, from_at, to_at))) AS cost_m,
+        @workspace_length_metres(ST_Length(ST_LineSubstring(g, from_at, to_at))) AS cost_m,
         ST_LineSubstring(g, from_at, to_at) AS geometry
     FROM (
         SELECT
             from_connector_id, from_at, to_connector_id, to_at,
-            ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid')) AS g
-        FROM brewgis.@{region}.overture_road_subsegments
+            ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @workspace_srid()) AS g
+        FROM brewgis.@{workspace_schema}.road_subsegments
     ) d
 )
 SELECT
@@ -58,9 +58,9 @@ SELECT
     sub.cost_m,
     sub.geometry
 FROM sub
-INNER JOIN brewgis.@{region}.road_network_vertices AS s
+INNER JOIN brewgis.@{workspace_schema}.road_network_vertices AS s
     ON s.connector_id = sub.from_connector_id
-INNER JOIN brewgis.@{region}.road_network_vertices AS t
+INNER JOIN brewgis.@{workspace_schema}.road_network_vertices AS t
     ON t.connector_id = sub.to_connector_id
 WHERE s.id <> t.id;
 

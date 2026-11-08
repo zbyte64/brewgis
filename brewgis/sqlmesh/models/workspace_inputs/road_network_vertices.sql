@@ -1,17 +1,17 @@
 MODEL (
-  name brewgis.@{region}.road_network_vertices,
+  name brewgis.@{workspace_schema}.road_network_vertices,
   kind FULL,
-  description 'Vertices of the region''s undirected drivable road graph: one node per Overture connector, deduplicated by connector id and positioned by interpolation along its segment.',
+  description 'Vertices of the workspace''s undirected drivable road graph: one node per Overture connector, deduplicated by connector id and positioned by interpolation along its segment.',
   column_descriptions (
     id = 'pgRouting vertex id (dense, ordered by connector id)',
     connector_id = 'Overture connector id shared by the segments meeting at this junction',
-    geometry = 'Vertex point in local_srid'
+    geometry = 'Vertex point in the workspace CRS (Workspace.local_srid)'
   ),
   audits (
     not_null(columns := (id, connector_id)),
     unique_values(columns := (id, connector_id))
   ),
-  blueprints @region_blueprints()
+  blueprints @workspace_blueprints()
 );
 
 -- pre hooks
@@ -19,7 +19,7 @@ MODEL (
 -- build; the extension ships with the PostGIS image.
   CREATE EXTENSION IF NOT EXISTS pgrouting WITH SCHEMA public;
 
--- Region road network vertices — the node table of the drivable graph that
+-- Workspace road network vertices — the node table of the drivable graph that
 -- road_network_edges connects.
 --
 -- Topology comes from Overture's own connectors: one vertex per distinct
@@ -38,12 +38,12 @@ MODEL (
 
 WITH occ AS (
     SELECT from_connector_id AS connector_id, from_at AS at,
-           ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid')) AS g
-    FROM brewgis.@{region}.overture_road_subsegments
+           ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @workspace_srid()) AS g
+    FROM brewgis.@{workspace_schema}.road_subsegments
     UNION ALL
     SELECT to_connector_id, to_at,
-           ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @VAR('local_srid'))
-    FROM brewgis.@{region}.overture_road_subsegments
+           ST_Transform(ST_SetSRID(wgs84_geometry, @VAR('default_srid', 4326)), @workspace_srid())
+    FROM brewgis.@{workspace_schema}.road_subsegments
 ),
 pts AS (
     SELECT DISTINCT ON (connector_id)

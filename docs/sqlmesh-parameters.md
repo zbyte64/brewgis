@@ -438,10 +438,10 @@ parcel size and density: SACOG's canvas lands on ~1.2 km one-way against
 SACSIM's ~6.4 km, and VMT is proportional to it. `models/python/trip_lengths.py`
 is therefore the model every trip-length consumer reads (`vmt`):
 
-* a workspace whose analysis region ships reference zones (`trip_length_table`
-  in `macros/region_blueprints.py:analysis_region_profiles` — only the imported
-  SACOG v1 snapshot, `sacog_v1`, whose SACSIM zones
-  `public.elk_grove_vmt_base_trip_lengths` were restored from the dump) gets
+* a workspace whose package shipped reference zones
+  (`Workspace.trip_length_source = package`, read through
+  `brewgis.wsp<pk>.trip_length_zones` — e.g. the SACOG v1 snapshot's SACSIM
+  zones, `public.elk_grove_vmt_base_trip_lengths` in the dump) gets
   the zone each parcel centroid falls in — the mean of that zone's six round-trip
   lengths, halved and converted to km, i.e. a real network distance — rescaled
   by the ratio of the table's regional mean to the parcels' own mean. Assigning
@@ -449,7 +449,7 @@ is therefore the model every trip-length consumer reads (`vmt`):
   shrinks the regional mean (SACOG: 5.76 km against the table's 6.42 km); the
   rescale keeps the table's spatial structure and puts the region on its
   published mean;
-* a region without such a table gets the gravity gradient rescaled so its
+* a workspace without zones gets the gravity gradient rescaled so its
   regional mean equals `transport_target_avg_trip_length_km` (6.42 km), which
   keeps the *shape* (near-employment parcels short, rural long) and fixes only
   the level.

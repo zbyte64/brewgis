@@ -60,6 +60,9 @@ python manage.py run_mcp
 |------|-------------|------------|
 | `list_workspaces(query?)` | List workspaces, optional name filter | Sync |
 | `get_workspace(slug)` | Get detailed workspace info | Sync |
+| `export_workspace_package(workspace_slug, include_public_data?)` | Export the workspace as a workspace package (base layer, Building Types, its own analysis inputs) | Async (Celery) |
+| `get_workspace_export_status(workspace_slug, export_id)` | Status of an export; the package file once complete | Sync |
+| `import_workspace_package(file_data_base64, name?, local_srid?)` | Import a workspace package as a new workspace (its base canvas builds in the background; poll `get_import_status`) | Async (Celery) |
 
 ### Scenario Tools
 

@@ -166,6 +166,15 @@ def _blueprinted_model_tables() -> frozenset[tuple[str, str]]:
     ):
         schema, _, table = workspace.effective_base_table().rpartition(".")
         tables.add((schema or "public", table))
+    # A workspace imported from a package reads its base canvas through its own
+    # ``wsp<pk>.base_canvas`` model (``models/workspace_inputs/packaged_base_canvas.py``),
+    # which exists exactly while the workspace has an extent and a package.
+    tables.update(
+        (workspace.input_schema, "base_canvas")
+        for workspace in Workspace.objects.exclude(package_dir="")
+        .exclude(extent=None)
+        .only("pk")
+    )
     tables.update(
         (SPATIAL_FILTER_SCHEMA, filter_model_table(pk))
         for pk in LayerFilter.objects.filter(output_layer__isnull=False).values_list(
