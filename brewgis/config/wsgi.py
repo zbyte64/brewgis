@@ -44,11 +44,6 @@ application = get_wsgi_application()
 application = ProxyMiddleware(
     application,
     {
-        "/tipg/": {
-            "target": settings.TILE_SERVER_TIPG_URL + "/",
-            "remove_prefix": True,
-            "host": "localhost:8000",
-        },
         "/martin/": {
             "target": settings.TILE_SERVER_MARTIN_URL + "/",
             "remove_prefix": True,

@@ -340,8 +340,6 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"
 # ==============================================================================
 # APPLICATION — Tile server, GIS, Soda, etc.
 # ==============================================================================
-TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
-TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
 # How brewgis makes Martin re-scan for new tables (it has no live-reload API).
 # MARTIN_RESTART_SOCKET: path of a unix socket owned by the host; writing

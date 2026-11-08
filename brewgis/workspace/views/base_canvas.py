@@ -214,10 +214,9 @@ class SelectBaseCanvasView(HtmxResponseMixin, FormView):
         # fill re-run exists to replace. Purge the canvas views (a new base
         # changes their rows too) and the base layer itself, restarting Martin
         # when it has never published one of them.
-        if self.workspace.tile_server_backend == "martin":
-            for scenario in canvas_scenarios:
-                purge_scenario_canvas_tiles(scenario)
-            ensure_martin_source(self.workspace.effective_base_table())
+        for scenario in canvas_scenarios:
+            purge_scenario_canvas_tiles(scenario)
+        ensure_martin_source(self.workspace.effective_base_table())
 
         logger.info(
             "Workspace %s base_table=%s fill_built_form=%s (planned %s)",

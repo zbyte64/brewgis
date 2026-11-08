@@ -1,10 +1,10 @@
 """Shared plumbing for the live-stack integration tests.
 
-``test_map_render_parity.py`` and ``test_paint_live_refresh.py`` drive the real
-dev stack, so they cannot use pytest-django's test database: Martin and tipg
-read the dev database directly, so seeding data through ``test_brewgis`` would
-be invisible to them. Each therefore creates its own workspace over a plain
-psycopg connection and has to remove it afterwards.
+``test_paint_live_refresh.py`` drives the real dev stack, so it cannot use
+pytest-django's test database: Martin reads the dev database directly, so
+seeding data through ``test_brewgis`` would be invisible to it. Each therefore
+creates its own workspace over a plain psycopg connection and has to remove it
+afterwards.
 
 That teardown is the problem this module solves. Every foreign key pointing at
 a workspace, layer, scenario or symbology config is ``NO ACTION``

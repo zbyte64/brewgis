@@ -21,7 +21,7 @@ COMPOSE_TEST_RUN = docker compose -f $(COMPOSE_FILE) run --rm -e DJANGO_TESTING=
 # ─────────────────────────────────────────────
 
 .PHONY: up
-up:  ## Build and start full local stack (Django + PostGIS + Redis + tipg + Martin + Celery + Flower)
+up:  ## Build and start full local stack (Django + PostGIS + Redis + Martin + Celery + Flower)
 	docker compose -f $(COMPOSE_FILE) up --build
 
 .PHONY: down

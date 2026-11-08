@@ -401,8 +401,7 @@ def refresh_filter_models(flt: LayerFilter | None = None) -> None:
         auto_apply=True,
         no_prompts=True,
     )
-    if flt.layer.workspace.tile_server_backend == "martin":
-        ensure_martin_source(f"{SPATIAL_FILTER_SCHEMA}.{filter_model_table(flt.pk)}")
+    ensure_martin_source(f"{SPATIAL_FILTER_SCHEMA}.{filter_model_table(flt.pk)}")
 
 
 def _copy_symbology(source: Layer, target: Layer) -> None:

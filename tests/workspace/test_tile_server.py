@@ -19,7 +19,6 @@ from typing import Any
 
 from django.conf import settings
 
-from brewgis.workspace.models import Workspace
 from brewgis.workspace.services import tile_server
 
 if TYPE_CHECKING:
@@ -159,11 +158,3 @@ def test_missing_trigger_socket_is_a_failed_restart_not_an_exception(
     settings.MARTIN_RESTART_SOCKET = str(tmp_path / "absent.sock")
 
     assert tile_server.restart_martin() is False
-
-
-def test_new_workspaces_default_to_the_deployment_tile_backend(settings: Any) -> None:
-    settings.TILE_SERVER_BACKEND = "martin"
-    assert Workspace(name="w").tile_server_backend == "martin"
-
-    settings.TILE_SERVER_BACKEND = "tipg"
-    assert Workspace(name="w").tile_server_backend == "tipg"

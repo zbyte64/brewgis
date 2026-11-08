@@ -285,9 +285,7 @@ class TestPlanInvalidatesRenderedTiles:
         base_canvas_table,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        workspace = WorkspaceFactory(
-            base_table=BASE_TABLE, tile_server_backend="martin"
-        )
+        workspace = WorkspaceFactory(base_table=BASE_TABLE)
         scenario = _alternative_scenario(workspace, "fill-refresh")
         base_source = f"built_form_fill.fill_{workspace.pk}"
         canvas_source = f"scenario_{scenario.slug}.scenario_{scenario.slug}_canvas"
@@ -302,23 +300,6 @@ class TestPlanInvalidatesRenderedTiles:
             f"{base}/cache/{canvas_source}",
             f"{base}/cache/{base_source}",
         ]
-
-    def test_a_tipg_workspace_asks_the_tile_server_for_nothing(
-        self,
-        client,
-        chosen_source,
-        spy,
-        base_canvas_table,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """tipg answers straight from the database, so there is nothing to purge."""
-        workspace = WorkspaceFactory(base_table=BASE_TABLE)
-        _alternative_scenario(workspace, "tipg-refresh")
-        calls = self._record_tile_requests(monkeypatch, published=set())
-
-        assert _submit(client, workspace, fill=True).status_code == 302
-
-        assert (calls.deletes, calls.catalog_reads) == ([], 0)
 
 
 @pytest.mark.views

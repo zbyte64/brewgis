@@ -30,8 +30,8 @@ User Browser                    Docker Compose Stack
      |- Map --> MapLibre GL JS (Lit)  |
      |          |                     |
      |          v                     |
-     |      Vector Tiles <-- tipg <---+-- PostGIS
-     |                   <-- martin <-+
+     |      Vector Tiles <-- martin <---+-- PostGIS
+     |                                |
      v                                |
   Django (config/)              Redis <-- Celery Worker (async tasks)
      |                                 |
@@ -44,7 +44,7 @@ User Browser                    Docker Compose Stack
 ```
 
 - **Request flow:** Browser -> Django -> View -> Template (Bootstrap 5, htmx for dynamic updates, Lit for map component)
-- **Map flow:** `<brew-gis-map>` Lit component fetches vector tiles from tipg or Martin -> tile server serves from PostGIS
+- **Map flow:** `<brew-gis-map>` Lit component fetches vector tiles from Martin -> tile server serves from PostGIS
 - **Async flow:** Celery beat dispatches periodic tasks -> Redis broker -> Celery workers
 - **Analysis pipeline:** sqlmesh models execute in dependency order; outputs registered as Layers
 
@@ -65,13 +65,13 @@ cp .env.example .env
 make up
 ```
 
-This starts: Django dev server, PostGIS, Redis, tipg, Martin, Celery worker, Celery beat, and Flower.
+This starts: Django dev server, PostGIS, Redis, Martin, Celery worker, Celery beat, and Flower.
 
 ### Key Commands
 
 ```bash
 make up              # Build and start full local stack
-make up-infra        # Start only infrastructure (PostGIS, Redis, tipg, Martin)
+make up-infra        # Start only infrastructure (PostGIS, Redis, Martin)
 make down            # Stop and remove all containers
 make migrate         # Apply database migrations
 make makemigrations  # Create new database migrations
@@ -118,7 +118,7 @@ celery -A brewgis.config.celery_app worker -l info  # Celery on host
 | Backend | Django 6.0, django-htmx, django-ninja, django-allauth |
 | Database | PostgreSQL 17 + PostGIS 3.5 |
 | Map | MapLibre GL JS 4.7+ via Lit web component |
-| Tiles | tipg (OGC Features API) and Martin (MVT) |
+| Tiles | Martin (MVT) |
 | Async | Celery 5.4 + Redis 6 + django-celery-beat |
 | Analytics | sqlmesh (SQL + Python models with numpy/pandas) |
 | Frontend | Bootstrap 5.2, htmx 2.0, Chart.js 4.4 |
@@ -193,7 +193,6 @@ make coverage              # Tests with coverage report (60% threshold)
 | `django` | Custom | Django dev server (port 8000) |
 | `postgres` | Custom | PostgreSQL 17 + PostGIS 3.5 |
 | `redis` | `redis:6` | Cache/queue broker |
-| `tipg` | `developmentseed/tipg` | OGC Features API tile server (port 8081) |
 | `martin` | `maplibre/martin:1.16.1` | MVT tile server (port 3000) |
 | `celeryworker` | extends django | Celery task worker |
 | `celerybeat` | extends django | Celery beat scheduler |

@@ -233,7 +233,7 @@ def _fix_elk_grove_land_use_srid(log: Any = None) -> None:
     NAD83 / California zone 2 (US survey feet) — EPSG:2226.  Since
     ``spatial_ref_sys`` is managed by the PostGIS extension and the dump's
     ``spatial_ref_sys`` COPY is intentionally skipped during restore,
-    SRID 900914 has no definition, causing downstream tools (tipg, Martin)
+    SRID 900914 has no definition, causing downstream tools (Martin)
     to fail when they discover the geometry column.
 
     This function is a no-op if the table doesn't exist or already has a
@@ -304,7 +304,7 @@ def restore_sacog_demo_db(log: Any = None) -> None:
     # public.elk_grove_land_use.wkb_geometry, which is actually
     # NAD83 / California zone 2 (US survey feet) = EPSG:2226.
     # SRID 900914 is not registered in PostGIS spatial_ref_sys, causing
-    # tile-server startups (tipg) to crash with
+    # tile-server startups to crash with
     # "Cannot find SRID (900914) in spatial_ref_sys".
     _fix_elk_grove_land_use_srid(log=log)
 

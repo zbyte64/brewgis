@@ -3,7 +3,7 @@
 ASGI config for Brew GIS project.
 
 HTTP is the WSGI application from ``wsgi.py`` run through ``WsgiToAsgi``, so
-the tile-server proxy (``/tipg/``, ``/martin/``) and ``ATOMIC_REQUESTS`` behave
+the tile-server proxy (``/martin/``) and ``ATOMIC_REQUESTS`` behave
 exactly as they do under a WSGI server. Websockets go to the Channels
 consumers in ``brewgis.workspace.routing``: the live map-event stream.
 """

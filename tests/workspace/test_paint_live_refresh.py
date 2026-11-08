@@ -1,8 +1,7 @@
 """Live-stack integration test: does a paint operation's result actually
 show up on the map without a page reload?
 
-This is deliberately a live-stack test in the same style as
-``test_map_render_parity.py`` — real Martin, a real running Django dev
+This is deliberately a live-stack test — real Martin, a real running Django dev
 server, and a real Playwright browser — because the bug it guards against
 lives entirely *outside* what a Django view-level unit test can see:
 
@@ -36,7 +35,7 @@ a live run of the actual stack — the real docker Celery worker, the real
 Martin container, a real MapLibre instance in a real browser — exercises
 the code paths where all three bugs actually lived.
 
-Like the parity test, the basemap is replaced with a blank offline style
+The basemap is replaced with a blank offline style
 (``_OFFLINE_BASEMAP_JS``) — the seeded CARTO default has no tiles at the
 fixture's coordinates, and MapLibre only installs the app's data layers (the
 painted-features overlay and the scenario canvas view the paint result has to
@@ -78,8 +77,8 @@ TEST_PASSWORD = "paint-live-refresh-test-pw"  # noqa: S105
 FIXTURE_SCHEMA = "public"
 FIXTURE_TABLE = "paint_live_refresh_fixture"
 
-# A quiet spot with no basemap layers drawn on top (see the identical
-# comment/reasoning in test_map_render_parity.py) so the fixture polygon
+# A quiet spot with no basemap layers drawn on top (see _OFFLINE_BASEMAP_JS)
+# so the fixture polygon
 # a) is visible without panning and b) has a deterministic pixel location
 # via map.project(), no screen-space feature hunting required.
 CENTER_LNG = 30.0
@@ -93,11 +92,9 @@ PAINTED_DU = 999.0
 
 
 def _pg_dsn() -> str:
-    """Build a libpq DSN pointed at the same DB Martin/tipg read from.
+    """Build a libpq DSN pointed at the same DB Martin reads from.
 
-    Duplicated (not imported) from test_map_render_parity.py — small
-    enough to keep this file independently runnable, and both are
-    intentionally decoupled from Django's ORM/test-database machinery.
+    Intentionally decoupled from Django's ORM/test-database machinery.
     """
     host = os.environ.get("POSTGRES_HOST")
     if host:
@@ -162,9 +159,9 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             """
             INSERT INTO workspace_workspace
                 (name, db_connection, db_schema, county_fips_list,
-                 center_lat, center_lng, zoom, base_table, tile_server_backend,
+                 center_lat, center_lng, zoom, base_table,
                  fill_built_form)
-            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, 'martin', false)
+            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, false)
             RETURNING id
             """,
             (
@@ -307,8 +304,7 @@ def _teardown_fixture(conn: psycopg.Connection, ids: dict[str, Any]) -> None:
 def _wait_until_ready(fqtn: str, timeout: float = 90.0) -> None:
     """Poll Martin until it reports *fqtn* in its catalog.
 
-    Martin only enumerates tables/views at process startup (see
-    test_map_render_parity.py's identical helper) — a restarted container
+    Martin only enumerates tables/views at process startup — a restarted container
     is *running* long before it's actually finished its startup scan.
     """
     deadline = time.monotonic() + timeout
@@ -350,7 +346,7 @@ def fixture_ids(pg_conn: Any, django_db_blocker: Any) -> Any:
         _teardown_fixture(pg_conn, ids)
 
 
-# See test_map_render_parity.py for the full story: the seeded default CARTO
+# Why the basemap is replaced: the seeded default CARTO
 # basemap serves no vector tiles at our fixture coordinates (404s), MapLibre's
 # errored-tile path never re-schedules a render, and so `load` — which is what
 # installs our data layers and the paint overlay — never fires. Rendering
@@ -384,7 +380,7 @@ def _login(page: Page) -> None:
     """Log in and verify it actually worked.
 
     A bad password (this test previously copy-pasted a pre-hashed password
-    literal for a *different* plaintext from test_map_render_parity.py)
+    literal for a *different* plaintext than TEST_PASSWORD)
     just re-renders the login form — no exception, no non-2xx response —
     so every downstream step silently ran unauthenticated instead of
     failing here where the real problem is.

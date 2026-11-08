@@ -3,8 +3,6 @@
 from django.db import migrations
 from django.db import models
 
-import brewgis.workspace.models
-
 
 class Migration(migrations.Migration):
     dependencies = [
@@ -17,7 +15,7 @@ class Migration(migrations.Migration):
             name="tile_server_backend",
             field=models.CharField(
                 choices=[("tipg", "tipg"), ("martin", "Martin")],
-                default=brewgis.workspace.models.default_tile_server_backend,
+                default="martin",
                 help_text="Vector tile server used to render this workspace's layers.",
                 max_length=16,
             ),

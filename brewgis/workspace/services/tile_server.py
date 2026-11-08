@@ -4,8 +4,7 @@ Two distinct kinds of change need Martin to notice, handled by the functions
 below:
 
 - A new schema/table (e.g. an analysis run's ``analysis__scenario_<id>``
-  results) is invisible to Martin — unlike tipg, which reads the database
-  per request — until Martin runs catalog discovery again.
+  results) is invisible to Martin until Martin runs catalog discovery again.
   :func:`restart_martin` restarts the container via the Docker socket so
   that happens immediately, without a human in the loop. Martin does also
   re-run discovery on its own at ``postgres.reload_interval`` (10 minutes
