@@ -186,7 +186,7 @@ npm run test      # vitest
 - **django-celery-beat** DatabaseScheduler for periodic tasks
 - **Tile server:** Both tipg and Martin run; `TILE_SERVER_BACKEND` setting controls tile URL generation
 - **Settings** use `django-environ` for env-var-based configuration (12-factor)
-- **One configuration:** local dev is the source of truth — one Dockerfile per image (`compose/django`, `compose/postgres`, `compose/docs`), one `docker-compose.yml`, one env set (`.envs/.django`, `.envs/.postgres`), one `requirements.txt`, no production variant. `settings.py` has one mode switch: `DJANGO_TESTING` (fast hashers, locmem email, in-memory channel layer); everything else runs the compose stack's config (debug toolbar, console email, locmem cache)
+- **One configuration:** local dev is the source of truth — one Dockerfile per image (`compose/django`, `compose/postgres`, `compose/docs`), one `docker-compose.yml`, one env set (`.envs/.django`, `.envs/.postgres`), one `requirements.txt`, no production variant. `settings.py` has one mode switch: `DJANGO_TESTING` (fast hashers, locmem email, in-memory channel layer); everything else runs the compose stack's config (debug toolbar, console email, locmem cache). A deployment changes behavior only through env vars: DJANGO_DEBUG, DJANGO_DEBUG_TOOLBAR (defaults to DJANGO_DEBUG), DJANGO_ALLOWED_HOSTS, DJANGO_SECURE_PROXY_SSL_HEADER, DJANGO_ACCOUNT_ALLOW_REGISTRATION (enforced by brewgis/workspace/adapters.py), TILE_SERVER_BACKEND (also the default for new workspaces), MARTIN_RESTART_SOCKET (host-owned Martin restart trigger; preferred over MARTIN_CONTAINER_NAME)
 - **View patterns:** FBVs (decorated with `@require_POST`/`@require_GET`/`@login_required`) dominant. CBVs (`CreateView`, `UpdateView`) reserved for built-forms CRUD.
 - **EAV paint overrides:** `PaintedCanvas` model stores per-feature, per-column overrides. `PaintEvent` model logs changes with batch_id grouping for undo/redo.
 - **Per-scenario SQL views:** `canvas_view_manager` dynamically creates views that LEFT JOIN paint overrides onto the base canvas.
@@ -262,7 +262,7 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`config/settings.py`|Single Django settings module — one config, plus test overrides under DJANGO_TESTING|
+|`config/settings.py`|Single Django settings module — one config, env-var toggles, plus test overrides under DJANGO_TESTING|
 |`config/urls.py`|Root URLconf: admin, allauth, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery 5.4 app with DatabaseScheduler|
 |`config/wsgi.py`|WSGI with Werkzeug ProxyMiddleware for tile server proxying|

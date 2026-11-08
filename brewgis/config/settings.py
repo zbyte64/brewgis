@@ -29,6 +29,8 @@ if READ_DOT_ENV_FILE:
 
 TESTING = env.bool("DJANGO_TESTING", default=False)
 DEBUG = env.bool("DJANGO_DEBUG", default=True)
+# Debug toolbar follows DEBUG unless DJANGO_DEBUG_TOOLBAR overrides it.
+DEBUG_TOOLBAR = env.bool("DJANGO_DEBUG_TOOLBAR", default=DEBUG)
 
 # ==============================================================================
 # GENERAL
@@ -198,6 +200,13 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 X_FRAME_OPTIONS = "DENY"
 
+# Behind a TLS-terminating proxy (the Cloudflare tunnel) trust its
+# X-Forwarded-Proto so request.scheme / is_secure() report https: tile URLs
+# (views/map.py) and the CSRF origin check depend on it. Enable only when the
+# proxy always sets the header.
+if env.bool("DJANGO_SECURE_PROXY_SSL_HEADER", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 # ==============================================================================
 # EMAIL — Baseline (overridden per mode below)
 # ==============================================================================
@@ -323,6 +332,7 @@ CELERY_TASK_EAGER_PROPAGATES = env.bool(
 # DJANGO-ALLAUTH
 # ==============================================================================
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
+ACCOUNT_ADAPTER = "brewgis.workspace.adapters.AccountAdapter"
 ACCOUNT_LOGIN_METHODS = {"username"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "username*", "password1*", "password2*"]
 ACCOUNT_EMAIL_VERIFICATION = "optional"
@@ -333,11 +343,14 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"
 TILE_SERVER_BACKEND = env("TILE_SERVER_BACKEND", default="tipg")
 TILE_SERVER_TIPG_URL = env("TILE_SERVER_TIPG_URL", default="http://tipg:8081")
 TILE_SERVER_MARTIN_URL = env("TILE_SERVER_MARTIN_URL", default="http://martin:3000")
-# Container to restart so Martin picks up newly-created tables — it has no
-# live-reload API, only a startup-time table scan. Unset (None) disables
-# the restart-on-new-tables behavior entirely (e.g. if the docker socket
-# isn't mounted in this environment).
+# How brewgis makes Martin re-scan for new tables (it has no live-reload API).
+# MARTIN_RESTART_SOCKET: path of a unix socket owned by the host; writing
+# "restart\n" makes the host restart Martin and answer "ok". Takes precedence
+# over MARTIN_CONTAINER_NAME, which restarts the container directly through
+# a mounted docker socket (dev compose). Both unset disables restarts; Martin
+# then picks up new tables at its own 10-minute reload.
 MARTIN_CONTAINER_NAME = env("MARTIN_CONTAINER_NAME", default=None)
+MARTIN_RESTART_SOCKET = env("MARTIN_RESTART_SOCKET", default=None)
 TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default=None)
 CENSUS_API_KEY = env("CENSUS_API_KEY", default=None)
 
@@ -377,7 +390,7 @@ SQLMESH_UI_URL = env("SQLMESH_UI_URL", default="http://localhost:8001")
 # MODE-SPECIFIC OVERRIDES
 # ==============================================================================
 # Test mode → fast hashers, locmem email, test auth key.
-# Otherwise → the docker-compose stack: debug toolbar, console email.
+# Otherwise → the docker-compose stack: debug toolbar (DJANGO_DEBUG_TOOLBAR, defaults to DEBUG), console email.
 
 if TESTING:  # ── TEST MODE ────────────────────────────────────────────────
     SECRET_KEY = env(
@@ -395,7 +408,10 @@ else:
         "DJANGO_SECRET_KEY",
         default="m42vNRcLUVAlAr68BB1CzaFwf60kiPM131JamMDe2lvWtS7nmfoJQuV6QcmlTH1t",
     )
-    ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
+    ALLOWED_HOSTS = env.list(
+        "DJANGO_ALLOWED_HOSTS",
+        default=["localhost", "0.0.0.0", "127.0.0.1"],  # noqa: S104
+    )
 
     # WhiteNoise — serve static files without collectstatic.
     INSTALLED_APPS = ["daphne", "whitenoise.runserver_nostatic", *INSTALLED_APPS[1:]]
@@ -406,19 +422,20 @@ else:
         default="django.core.mail.backends.console.EmailBackend",
     )
 
-    # Django Debug Toolbar
-    INSTALLED_APPS += ["debug_toolbar"]
-    MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
-    DEBUG_TOOLBAR_CONFIG = {
-        "DISABLE_PANELS": [
-            "debug_toolbar.panels.redirects.RedirectsPanel",
-            # Disable profiling panel due to an issue with Python 3.12:
-            # https://github.com/jazzband/django-debug-toolbar/issues/1875
-            "debug_toolbar.panels.profiling.ProfilingPanel",
-        ],
-        "SHOW_TEMPLATE_CONTEXT": True,
-    }
-    INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
-    if env("USE_DOCKER") == "yes":
-        hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
-        INTERNAL_IPS += [".".join([*ip.split(".")[:-1], "1"]) for ip in ips]
+    if DEBUG_TOOLBAR:
+        # Django Debug Toolbar
+        INSTALLED_APPS += ["debug_toolbar"]
+        MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+        DEBUG_TOOLBAR_CONFIG = {
+            "DISABLE_PANELS": [
+                "debug_toolbar.panels.redirects.RedirectsPanel",
+                # Disable profiling panel due to an issue with Python 3.12:
+                # https://github.com/jazzband/django-debug-toolbar/issues/1875
+                "debug_toolbar.panels.profiling.ProfilingPanel",
+            ],
+            "SHOW_TEMPLATE_CONTEXT": True,
+        }
+        INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
+        if env("USE_DOCKER") == "yes":
+            hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
+            INTERNAL_IPS += [".".join([*ip.split(".")[:-1], "1"]) for ip in ips]

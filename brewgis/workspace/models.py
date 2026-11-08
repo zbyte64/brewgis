@@ -12,6 +12,11 @@ from brewgis.workspace.built_forms.models import StreetPatternChoices  # noqa: F
 from brewgis.workspace.built_forms.models import VintageChoices  # noqa: F401
 
 
+def default_tile_server_backend() -> str:
+    """New workspaces render through the deployment's TILE_SERVER_BACKEND."""
+    return settings.TILE_SERVER_BACKEND
+
+
 class Workspace(models.Model):
     name = models.CharField(max_length=128)
     db_connection = models.CharField(max_length=64, default="default")
@@ -50,7 +55,7 @@ class Workspace(models.Model):
             ("tipg", "tipg"),
             ("martin", "Martin"),
         ],
-        default="tipg",
+        default=default_tile_server_backend,
         help_text="Vector tile server used to render this workspace's layers.",
     )
     fill_built_form = models.BooleanField(
