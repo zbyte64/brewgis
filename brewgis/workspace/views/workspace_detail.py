@@ -253,9 +253,8 @@ class WorkspaceSettingsForm(forms.ModelForm):
 
     class Meta:
         model = Workspace
-        fields = ["tile_server_backend", "local_srid"]
+        fields = ["local_srid"]
         widgets = {
-            "tile_server_backend": forms.Select(attrs={"class": "form-select"}),
             "local_srid": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
         }
 
@@ -306,7 +305,7 @@ def _render_detail(
 @user_passes_test(lambda u: u.is_authenticated)
 @require_POST
 def workspace_settings_update(request: HttpRequest, pk: int) -> HttpResponse:
-    """Save workspace-level settings (e.g. tile server backend) from the hub page."""
+    """Save workspace-level settings (e.g. local SRID) from the hub page."""
     workspace = get_object_or_404(Workspace, pk=pk)
     form = WorkspaceSettingsForm(request.POST, instance=workspace)
     if not form.is_valid():

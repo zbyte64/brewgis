@@ -249,15 +249,9 @@ def build_map_layer_data(
         )["painted_at__max"]
         version_qs = f"?v={last_painted.timestamp():.0f}" if last_painted else ""
 
-        if workspace.tile_server_backend == "martin":
-            canvas_tiles_url = (
-                f"{scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}{version_qs}"
-            )
-        else:
-            canvas_tiles_url = (
-                f"{scheme_host}"
-                f"/tipg/collections/{canvas_source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}{version_qs}"
-            )
+        canvas_tiles_url = (
+            f"{scheme_host}/martin/{canvas_source_id}/{{z}}/{{x}}/{{y}}{version_qs}"
+        )
 
     # Build regular layer data. Scoped to the active scenario: a scenario's
     # analysis results belong to it alone (each scenario owns an instance of
@@ -292,11 +286,7 @@ def build_map_layer_data(
                 "tiles": [canvas_tiles_url],
                 "promoteId": "parcel_id",
             }
-            base_source_layer = (
-                "default"
-                if workspace.tile_server_backend == "tipg"
-                else canvas_source_id
-            )
+            data["source-layer"] = canvas_source_id
         else:
             data["source"] = layer.to_maplibre_source()
             if is_base_layer:
@@ -304,7 +294,8 @@ def build_map_layer_data(
                 # parcel ids aren't valid native MVT feature ids, so without
                 # this, click-to-inspect can never resolve a clicked feature.
                 data["source"]["promoteId"] = "parcel_id"
-            base_source_layer = None
+            # Martin names each MVT layer after its source's own id.
+            data["source-layer"] = layer._source_id()  # noqa: SLF001
 
         # Make tile URLs absolute (MapLibre v4+ requires absolute URLs
         # for tile sources in web worker contexts).
@@ -313,17 +304,6 @@ def build_map_layer_data(
                 t if t.startswith("http") else f"{scheme_host}{t}"
                 for t in data["source"]["tiles"]
             ]
-
-        # MapLibre always requires a source-layer for a vector source — it's
-        # not tipg-specific. tipg's MVT layers are always named "default";
-        # Martin's TileJSON confirms it names each MVT layer after the
-        # source's own id (the same "{schema}.{table}" string used above).
-        if base_source_layer is not None:
-            data["source-layer"] = base_source_layer
-        elif workspace.tile_server_backend == "tipg":
-            data["source-layer"] = "default"
-        else:
-            data["source-layer"] = layer._source_id()  # noqa: SLF001
 
         # Merge symbology-generated paint/layout if available. The attribute
         # column driving it is also surfaced to the frontend so hover
@@ -617,9 +597,7 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
                 "name": layer.name,
                 "type": layer.geometry_type,
                 "source": source,
-                "source-layer": "default"
-                if workspace.tile_server_backend == "tipg"
-                else layer._source_id(),  # noqa: SLF001
+                "source-layer": layer._source_id(),  # noqa: SLF001
                 "symbology": layer.symbology if hasattr(layer, "symbology") else None,
                 "layout": {"visibility": "visible" if layer.is_visible else "none"},
             }

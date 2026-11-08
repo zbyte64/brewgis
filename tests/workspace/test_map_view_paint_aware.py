@@ -32,9 +32,7 @@ class TestMapViewBaseLayerSource(TestCase):
         self.client.force_login(self.user)
         # Matches Workspace.base_table's default ("public.base_canvas") so
         # this Layer is recognized as *the* base canvas layer.
-        self.workspace = WorkspaceFactory(
-            center_lng=-119.7, center_lat=36.7, tile_server_backend="martin"
-        )
+        self.workspace = WorkspaceFactory(center_lng=-119.7, center_lat=36.7)
         self.layer = LayerFactory(
             workspace=self.workspace,
             key="base_canvas",

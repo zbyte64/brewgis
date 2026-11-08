@@ -251,13 +251,11 @@ def purge_scenario_canvas_tiles(scenario: Scenario) -> None:
     Martin scans the database once at startup and caches tiles per source
     without looking at the request, so a paint write stays invisible until its
     source's cache is purged (see
-    ``brewgis.workspace.services.tile_server.purge_martin_cache``). tipg serves
-    straight from the database and needs nothing. Either way the browser holds
-    its own tile cache, so open map pages are told to cache-bust the canvas
-    (``tiles.changed``, see ``services.map_events``).
+    ``brewgis.workspace.services.tile_server.purge_martin_cache``). The browser
+    holds its own tile cache too, so open map pages are told to cache-bust the
+    canvas (``tiles.changed``, see ``services.map_events``).
     """
-    if scenario.workspace.tile_server_backend == "martin":
-        purge_martin_cache(canvas_view_qualifier(scenario))
+    purge_martin_cache(canvas_view_qualifier(scenario))
     notify_map(
         workspace_id=scenario.workspace_id,
         kind="tiles.changed",

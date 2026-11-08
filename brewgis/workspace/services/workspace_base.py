@@ -154,10 +154,9 @@ def adopt_base_table(
     # without ever looking at the request, and discovers tables only at its own
     # startup, so without this the map keeps drawing whatever it rendered
     # before the plan.
-    if workspace.tile_server_backend == "martin":
-        for scenario in canvas_scenarios:
-            purge_scenario_canvas_tiles(scenario)
-        ensure_martin_source(workspace.effective_base_table())
+    for scenario in canvas_scenarios:
+        purge_scenario_canvas_tiles(scenario)
+    ensure_martin_source(workspace.effective_base_table())
 
     logger.info(
         "Workspace %s base_table=%s fill_built_form=%s (planned %s)",

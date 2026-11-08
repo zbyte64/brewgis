@@ -17,8 +17,8 @@ User Browser                    Docker Compose Stack
      ├─ Map ─► MapLibre GL JS (Lit)   │
      │          │                     │
      │          ▼                     │
-     │      Vector Tiles ◄── tipg ◄───┘
-     │                   ◄── martin ◄─└── PostGIS
+     │      Vector Tiles ◄── martin ◄─└── PostGIS
+     │                                ▼
      ▼                                ▼
   Django (config/)              Redis ◄── Celery Worker (async tasks)
      │                                 │
@@ -32,7 +32,7 @@ User Browser                    Docker Compose Stack
 ```
 
 - **Request flow:** Browser → Django → View (FBV, FormView, CreateView) → Template (Bootstrap 5, htmx, Lit map component)
-- **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from tipg or Martin → serves tiles from PostGIS
+- **Map flow:** Template renders `<brew-gis-map>` Lit component → fetches vector tiles from Martin → serves tiles from PostGIS
 - **Async flow:** Celery Beat (DatabaseScheduler via django-celery-beat) dispatches periodic tasks → Redis broker → Celery workers execute tasks
 - **Live map flow (Django Channels):** the server runs ASGI (`brewgis/config/asgi.py`: daphne behind `runserver`). HTTP is the WSGI app through `WsgiToAsgi`, so the Werkzeug tile proxy and `ATOMIC_REQUESTS` are unchanged. Websockets go to `workspace/consumers.py:MapEventsConsumer` (`ws/workspace/<pk>/map/`), which `<brew-gis-map events-url=…>` holds open. Anything that changes what the map draws calls `services/map_events.py:notify_map` → on commit → Redis channel layer (so Celery workers can publish too) → every socket on that workspace. Events are invalidations, not payloads: `layers.changed` makes the component re-fetch `map_layers_json` (the same `build_map_layer_data` list the page embeds) and reconcile in place (add/remove/restyle/restack); `tiles.changed` cache-busts sources; `paint.run`/`analysis.run`/`import.run` report run status; `basemap.changed` goes to the selecting user only. `workspace/signals.py` publishes for every `Layer`/`LayerGroup`/`SymbologyConfig` save or delete and every run status save, so new code that writes those rows needs nothing extra. The page never reloads (no `HX-Refresh`) and nothing polls paint status. A write that runs on every page render must not fire those signals (see `ensure_painted_features_layer`'s queryset update), or open tabs would make each other reload forever.
 - **GIS ingest:** User uploads GIS file → geopandas reads → `df.to_postgis()` via SQLAlchemy
@@ -100,7 +100,7 @@ All commands use Docker Compose. **No local venv workflow** — everything runs 
 
 ```bash
 make up           # Build and start full local stack (11 services)
-make up-infra     # Start only infrastructure (PostGIS, Redis, tipg, Martin)
+make up-infra     # Start only infrastructure (PostGIS, Redis, Martin)
 make down         # Stop and remove all containers
 make shell        # Django shell
 make migrate      # Apply database migrations
@@ -119,7 +119,7 @@ make test-parallel         # Parallel (excludes slow and e2e)
 make test-models           # Model tests only
 make test-views            # View/HTTP tests only
 make test-integration      # PostGIS/SQLMesh-dependent tests
-make test-live-stack       # Live-stack tests: running server + Martin/tipg + browser
+make test-live-stack       # Live-stack tests: running server + Martin + browser
 make test-e2e              # Playwright BDD end-to-end tests (sequential)
 make test-review           # UX design review tests (Playwright)
 make test-deal             # Deal property-based tests (sequential, DEAL_ENABLED=1)
@@ -185,9 +185,9 @@ npm run test      # vitest
 - **JSON in template attributes:** Use `{{ value|json_attr }}` filter — do NOT use raw `json.dumps()` in views for template consumption
 - **django-allauth** for authentication (username-based, email optional verification, MFA support)
 - **django-celery-beat** DatabaseScheduler for periodic tasks
-- **Tile server:** Both tipg and Martin run; `TILE_SERVER_BACKEND` setting controls tile URL generation
+- **Tile server:** Martin (MVT) serves every vector tile through the app's `/martin/` proxy; `TILE_SERVER_MARTIN_URL` is the upstream.
 - **Settings** use `django-environ` for env-var-based configuration (12-factor)
-- **One configuration:** local dev is the source of truth — one Dockerfile per image (`compose/django`, `compose/postgres`, `compose/docs`), one `docker-compose.yml`, one env set (`.envs/.django`, `.envs/.postgres`), one `requirements.txt`, no production variant. `settings.py` has one mode switch: `DJANGO_TESTING` (fast hashers, locmem email, in-memory channel layer); everything else runs the compose stack's config (debug toolbar, console email, locmem cache)
+- **One configuration:** local dev is the source of truth — one Dockerfile per image (`compose/django`, `compose/postgres`, `compose/docs`), one `docker-compose.yml`, one env set (`.envs/.django`, `.envs/.postgres`), one `requirements.txt`, no production variant. `settings.py` has one mode switch: `DJANGO_TESTING` (fast hashers, locmem email, in-memory channel layer, no Martin restarts); everything else runs the compose stack's config (debug toolbar, console email, locmem cache). A deployment changes behavior only through env vars: DJANGO_DEBUG, DJANGO_DEBUG_TOOLBAR (defaults to DJANGO_DEBUG), DJANGO_ALLOWED_HOSTS, DJANGO_SECURE_PROXY_SSL_HEADER, DJANGO_ACCOUNT_ALLOW_REGISTRATION (enforced by brewgis/workspace/adapters.py), MARTIN_RESTART_SOCKET (host-owned Martin restart trigger; preferred over MARTIN_CONTAINER_NAME)
 - **View patterns:** FBVs (decorated with `@require_POST`/`@require_GET`/`@login_required`) dominant. CBVs (`CreateView`, `UpdateView`) reserved for built-forms CRUD.
 - **EAV paint overrides:** `PaintedCanvas` model stores per-feature, per-column overrides. `PaintEvent` model logs changes with batch_id grouping for undo/redo.
 - **Per-scenario SQL views:** `canvas_view_manager` dynamically creates views that LEFT JOIN paint overrides onto the base canvas.
@@ -263,7 +263,7 @@ npm run test      # vitest
 
 |File|Role|
 |---|---|
-|`config/settings.py`|Single Django settings module — one config, plus test overrides under DJANGO_TESTING|
+|`config/settings.py`|Single Django settings module — one config, env-var toggles, plus test overrides under DJANGO_TESTING|
 |`config/urls.py`|Root URLconf: admin, allauth, workspace app, debug toolbar|
 |`config/celery_app.py`|Celery 5.4 app with DatabaseScheduler|
 |`config/wsgi.py`|WSGI with Werkzeug ProxyMiddleware for tile server proxying|
@@ -322,7 +322,7 @@ npm run test      # vitest
 |`@pytest.mark.models`|Django model unit tests|DB|
 |`@pytest.mark.views`|View/HTTP tests|DB, client|
 |`@pytest.mark.integration`|PostGIS/SQLMesh-dependent tests|Running PostGIS|
-|`@pytest.mark.live_stack`|Tests needing the running stack (dev server, Martin/tipg, Celery, browser); run by `make test-live-stack`, excluded from `make test-integration`|Full `docker compose up` stack|
+|`@pytest.mark.live_stack`|Tests needing the running stack (dev server, Martin, Celery, browser); run by `make test-live-stack`, excluded from `make test-integration`|Full `docker compose up` stack|
 |`@pytest.mark.slow`|Property-based or long-running|hypothesis, external services|
 |`@pytest.mark.e2e`|Playwright BDD e2e tests|Full stack|
 |`@pytest.mark.review`|UX design review tests|Playwright|

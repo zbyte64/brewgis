@@ -203,15 +203,14 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     run.save(update_fields=["status", "completed_at", "log_output"])
 
     # New analysis__scenario_<id> tables are invisible to Martin until it
-    # restarts (see brewgis.workspace.services.tile_server) — only relevant
-    # if this workspace actually renders tiles through Martin. Block until
+    # restarts (see brewgis.workspace.services.tile_server). Block until
     # Martin has actually finished re-scanning (not just restarted) so the
     # map is correct the moment this run shows as "completed" — otherwise
     # the user can land on a map that briefly renders wrong/blank tiles.
-    if Workspace.objects.filter(
-        pk=run.workspace_id, tile_server_backend="martin"
-    ).exists():
-        restart_martin()
+    # Without a restart (none configured, or it failed) Martin only sees the
+    # tables at its own periodic reload, so waiting here would just burn the
+    # full timeout.
+    if restart_martin():
         wait_until_martin_ready(result.get("fqtns", []))
 
 

@@ -88,15 +88,6 @@ class Workspace(models.Model):
             "columns, a SQLMesh model's view or an imported one alike."
         ),
     )
-    tile_server_backend = models.CharField(
-        max_length=16,
-        choices=[
-            ("tipg", "tipg"),
-            ("martin", "Martin"),
-        ],
-        default="tipg",
-        help_text="Vector tile server used to render this workspace's layers.",
-    )
     fill_built_form = models.BooleanField(
         default=False,
         help_text=(
@@ -180,22 +171,9 @@ def _tile_source_id(schema: str, table: str) -> str:
     return f"{schema}.{table}"
 
 
-def _maplibre_vector_source(
-    schema: str, table: str, backend: str | None = None
-) -> dict:
+def _maplibre_vector_source(schema: str, table: str) -> dict:
     """Return a MapLibre GL JS vector source specification for schema.table."""
-    source_id = _tile_source_id(schema, table)
-    if (backend or settings.TILE_SERVER_BACKEND) == "martin":
-        return {
-            "type": "vector",
-            "url": f"/martin/{source_id}",
-        }
-    return {
-        "type": "vector",
-        "tiles": [
-            f"/tipg/collections/{source_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"
-        ],
-    }
+    return {"type": "vector", "url": f"/martin/{_tile_source_id(schema, table)}"}
 
 
 class Layer(models.Model):
@@ -222,7 +200,7 @@ class Layer(models.Model):
     layer_source = models.CharField(max_length=255)
     db_table = models.CharField(
         max_length=64,
-    )  # TODO ask tipg or pg for list of options
+    )
     db_schema = models.CharField(
         max_length=64,
         blank=True,
@@ -289,9 +267,7 @@ class Layer(models.Model):
     def to_maplibre_source(self) -> dict:
         """Return a MapLibre GL JS source specification dict."""
         schema, table = self.source_table()
-        return _maplibre_vector_source(
-            schema, table, backend=self.workspace.tile_server_backend
-        )
+        return _maplibre_vector_source(schema, table)
 
 
 class SymbologyConfig(models.Model):

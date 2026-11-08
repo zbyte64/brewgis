@@ -11,6 +11,8 @@ data the database no longer holds, which is the failure this pins.
 
 from __future__ import annotations
 
+import socket
+import threading
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from typing import Any
@@ -20,6 +22,8 @@ from django.conf import settings
 from brewgis.workspace.services import tile_server
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pytest
 
 
@@ -91,3 +95,66 @@ def test_an_unreachable_martin_is_left_alone(
 
     assert deletes == []
     assert restarts == []
+
+
+def _must_not_be_called() -> None:
+    msg = "docker socket used despite MARTIN_RESTART_SOCKET"
+    raise AssertionError(msg)
+
+
+def _serve_once(path: Path, reply: bytes) -> tuple[list[bytes], threading.Thread]:
+    """Serve one trigger-socket request at *path*; record the line it sent."""
+    received: list[bytes] = []
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    server.listen(1)
+
+    def serve() -> None:
+        try:
+            conn, _ = server.accept()
+            with conn, conn.makefile("rb") as stream:
+                received.append(stream.readline().strip())
+                conn.sendall(reply)
+        finally:
+            server.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return received, thread
+
+
+def test_trigger_socket_restart_sends_restart_and_reports_ok(
+    tmp_path: Path, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The socket takes precedence over the docker socket, which must stay untouched."""
+    path = tmp_path / "m.sock"
+    received, thread = _serve_once(path, b"ok\n")
+    settings.MARTIN_RESTART_SOCKET = str(path)
+    settings.MARTIN_CONTAINER_NAME = "brewgis-martin"
+    monkeypatch.setattr(tile_server.docker, "from_env", _must_not_be_called)
+
+    assert tile_server.restart_martin() is True
+
+    thread.join(timeout=5)
+    assert received == [b"restart"]
+
+
+def test_trigger_socket_refusal_is_a_failed_restart(
+    tmp_path: Path, settings: Any
+) -> None:
+    path = tmp_path / "m.sock"
+    received, thread = _serve_once(path, b"error unknown-command\n")
+    settings.MARTIN_RESTART_SOCKET = str(path)
+
+    assert tile_server.restart_martin() is False
+
+    thread.join(timeout=5)
+    assert received == [b"restart"]
+
+
+def test_missing_trigger_socket_is_a_failed_restart_not_an_exception(
+    tmp_path: Path, settings: Any
+) -> None:
+    settings.MARTIN_RESTART_SOCKET = str(tmp_path / "absent.sock")
+
+    assert tile_server.restart_martin() is False

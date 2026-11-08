@@ -131,9 +131,6 @@ def read_gis_file_into_table(
     file_obj: BufferedReader, schema: str, table_name: str
 ) -> None:
     df = geopandas.read_file(file_obj)
-    # columns need to be lower case for tipg: https://github.com/developmentseed/tipg/issues/195
-    if settings.TILE_SERVER_BACKEND == "tipg":
-        df.columns = map(str.lower, df.columns)
     con = get_engine()
     df.to_postgis(
         table_name, con, schema, chunksize=50000, dtype=base_canvas_dtypes(df)

@@ -68,6 +68,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Playwright
     from pytest_django.live_server_helper import LiveServer
 
+    from tests.live_server import DaphneLiveServer
+
 
 # ── CLI options ────────────────────────────────────────────────────────
 
@@ -147,7 +149,11 @@ def live_server_url(live_server: LiveServer) -> str:
 # already running.
 #
 # Letting those requests finish before the flush starts keeps the truncate and
-# the live server out of each other's locks. This fixture must be finalized
+# the live server out of each other's locks. The server's own count of
+# unfinished requests comes first: a request still queued for the live
+# server's single WSGI thread, or running middleware between autocommit
+# queries, holds no transaction yet, so ``pg_stat_activity`` alone reports the
+# database quiet and the flush starts under it. This fixture must be finalized
 # before the flush, which is why it requests ``db``: fixtures finalize in
 # reverse setup order, and ``db`` owns the flush.
 
@@ -182,10 +188,23 @@ def wait_for_requests_to_finish(timeout: float = _DRAIN_TIMEOUT_SECONDS) -> int:
 
 
 @pytest.fixture(autouse=True)
-def _quiet_server_before_flush(db, page: Page) -> Generator[None, None, None]:
+def _quiet_server_before_flush(
+    db, page: Page, request: pytest.FixtureRequest
+) -> Generator[None, None, None]:
     """Let the live server's requests finish before the test's table flush."""
+    # Looked up rather than declared, like the step functions do: a static
+    # ``live_server`` dependency makes pytest-django's autouse live-server
+    # helper reach for attributes only its own LiveServer has.
+    live_server: DaphneLiveServer = request.getfixturevalue("live_server")
     yield
     page.close()
+    in_flight = live_server.wait_until_idle(_DRAIN_TIMEOUT_SECONDS)
+    if in_flight:
+        print(  # noqa: T201
+            f"[DX] {in_flight} request(s) still in flight after "
+            f"{_DRAIN_TIMEOUT_SECONDS:.0f}s — the flush may deadlock against them",
+            file=sys.stderr,
+        )
     busy = wait_for_requests_to_finish()
     if busy:
         print(  # noqa: T201

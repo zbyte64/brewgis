@@ -30,7 +30,9 @@ def seed_workspaces(apps, schema_editor) -> None:  # noqa: ANN001, ARG001
     from brewgis.workspace.built_forms.default_library import seed_default_built_forms
     from brewgis.workspace.models import Workspace
 
-    for workspace in Workspace.objects.all():
+    # The live model carries every column a later migration adds; selecting
+    # only the key keeps this query valid on a database still at this point.
+    for workspace in Workspace.objects.only("pk"):
         seed_default_built_forms(workspace)
         backfill_library_fields(workspace)
         retire_library_entries(workspace)

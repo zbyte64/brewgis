@@ -117,7 +117,7 @@ jobs:
       # database, not its server or tile containers) — `make test` deselects
       # them, which is how a broken pipeline step and a stale canvas-view
       # assertion stayed green. `make test-live-stack` (a running server,
-      # Martin/tipg and a browser) is still run by hand.
+      # Martin and a browser) is still run by hand.
       - name: Run integration tests (PostGIS)
         run: make test-integration
 
@@ -165,16 +165,16 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.yml down -v
 
-  # The three tests that need a *running* stack rather than a test database:
+  # The live-stack tests need a *running* stack rather than a test database:
   # an alternative scenario's canvas view tiled by Martin, a real MapLibre
-  # render after painting (twice, to compare tipg's pixels against Martin's),
-  # and a real (non-eager) Celery paint task in between. They are excluded from
-  # `make test` and `make test-integration` by the live_stack marker.
+  # render after painting, and a real (non-eager) Celery paint task in between.
+  # They are excluded from `make test` and `make test-integration` by the
+  # live_stack marker.
   #
-  # They cannot use pytest-django's test database: Martin and tipg read the dev
+  # They cannot use pytest-django's test database: Martin reads the dev
   # database directly, so the fixtures go through psycopg and the browser talks
   # to the compose stack's own dev server on :8000 — hence `exec` into the
-  # running django container rather than `run --rm`. Restarting tipg/Martin to
+  # running django container rather than `run --rm`. Restarting Martin to
   # re-discover a freshly created fixture table goes through the docker socket
   # docker-compose.yml already mounts into that container.
   #
@@ -222,7 +222,7 @@ jobs:
       - name: Start the database and the tile servers
         run: |
           docker compose -f docker-compose.yml up -d \
-            postgres redis tipg martin
+            postgres redis martin
 
       - name: Run DB Migrations
         run: |
@@ -254,7 +254,7 @@ jobs:
           docker compose -f docker-compose.yml logs celeryworker django | tail -200 || true
           exit 1
 
-      - name: Run live-stack tests (real browser, Martin/tipg, Celery)
+      - name: Run live-stack tests (real browser, Martin, Celery)
         run: make test-live-stack
 
       - name: Tear down the Stack

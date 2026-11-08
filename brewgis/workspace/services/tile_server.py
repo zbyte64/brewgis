@@ -4,8 +4,7 @@ Two distinct kinds of change need Martin to notice, handled by the functions
 below:
 
 - A new schema/table (e.g. an analysis run's ``analysis__scenario_<id>``
-  results) is invisible to Martin — unlike tipg, which reads the database
-  per request — until Martin runs catalog discovery again.
+  results) is invisible to Martin until Martin runs catalog discovery again.
   :func:`restart_martin` restarts the container via the Docker socket so
   that happens immediately, without a human in the loop. Martin does also
   re-run discovery on its own at ``postgres.reload_interval`` (10 minutes
@@ -31,6 +30,7 @@ below:
 from __future__ import annotations
 
 import logging
+import socket
 import time
 
 import docker
@@ -77,6 +77,31 @@ def wait_until_martin_ready(fqtns: list[str], timeout: float = 90.0) -> bool:
     return False
 
 
+def _restart_martin_via_socket(path: str) -> bool:
+    """Ask the host to restart Martin through its trigger socket at *path*.
+
+    The host owns the response logic: the only accepted request is the line
+    ``restart``, answered with ``ok`` once Martin was restarted.
+    """
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(60)
+            sock.connect(path)
+            sock.sendall(b"restart\n")
+            with sock.makefile("rb") as stream:
+                reply = stream.readline().strip()
+    except OSError:
+        logger.exception("Failed to request a Martin restart via %s", path)
+        return False
+    if reply != b"ok":
+        logger.error(
+            "Martin restart via %s refused: %s", path, reply.decode(errors="replace")
+        )
+        return False
+    logger.info("Restarted Martin via %s to pick up new tables", path)
+    return True
+
+
 def restart_martin() -> bool:
     """Restart the Martin container so it re-scans the database for tables.
 
@@ -88,11 +113,14 @@ def restart_martin() -> bool:
     a side effect, which a *reload* only does for sources whose metadata
     changed.
 
-    No-ops (returns False) if ``MARTIN_CONTAINER_NAME`` isn't configured
-    (e.g. the docker socket isn't mounted in this environment) or if the
-    restart fails for any reason — this is a best-effort refresh, not
-    something that should ever break the caller's own success path.
+    Uses the host's trigger socket when ``MARTIN_RESTART_SOCKET`` is set, else
+    the docker socket via ``MARTIN_CONTAINER_NAME``. No-ops (returns False) when
+    neither is configured (e.g. the docker socket isn't mounted in this
+    environment) or if the restart fails for any reason — this is a best-effort
+    refresh, not something that should ever break the caller's own success path.
     """
+    if settings.MARTIN_RESTART_SOCKET:
+        return _restart_martin_via_socket(settings.MARTIN_RESTART_SOCKET)
     container_name = settings.MARTIN_CONTAINER_NAME
     if not container_name:
         return False
