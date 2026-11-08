@@ -160,8 +160,10 @@ def _setup_fixture(conn: psycopg.Connection) -> dict[str, Any]:
             INSERT INTO workspace_workspace
                 (name, db_connection, db_schema, county_fips_list,
                  center_lat, center_lng, zoom, base_table,
-                 fill_built_form)
-            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, false)
+                 fill_built_form, local_srid, constraint_source,
+                 trip_length_source, public_data_source, package_dir)
+            VALUES (%s, 'default', %s, '[]', %s, %s, %s, %s, false,
+                    3310, 'public', 'gravity', 'fetch', '')
             RETURNING id
             """,
             (
