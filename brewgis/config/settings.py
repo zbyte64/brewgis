@@ -406,6 +406,11 @@ if TESTING:  # ── TEST MODE ────────────────
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     MEDIA_URL = "http://media.testserver"
     TOKEN_AUTH_KEY = env("TOKEN_AUTH_KEY", default="test-token-key-dev-only")
+    # Martin serves the dev database, never the test one, so restarting it for
+    # a test's new table only costs its startup re-scan (and disturbs the
+    # developer's running stack). Tests of the restart set these themselves.
+    MARTIN_CONTAINER_NAME = None
+    MARTIN_RESTART_SOCKET = None
 
 else:
     SECRET_KEY = env(

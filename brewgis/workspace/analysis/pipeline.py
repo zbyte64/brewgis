@@ -207,8 +207,11 @@ def _execute_analysis_run(run: AnalysisRun) -> None:
     # Martin has actually finished re-scanning (not just restarted) so the
     # map is correct the moment this run shows as "completed" — otherwise
     # the user can land on a map that briefly renders wrong/blank tiles.
-    restart_martin()
-    wait_until_martin_ready(result.get("fqtns", []))
+    # Without a restart (none configured, or it failed) Martin only sees the
+    # tables at its own periodic reload, so waiting here would just burn the
+    # full timeout.
+    if restart_martin():
+        wait_until_martin_ready(result.get("fqtns", []))
 
 
 def launch_analysis_run(
