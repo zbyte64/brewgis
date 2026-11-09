@@ -56,6 +56,7 @@ MODULE_DEPENDENCIES: dict[str, list[str]] = {
         "water_demand",
         "energy_demand",
         "land_consumption",
+        "displacement_risk",
     ],
     "sprawl_cost": ["core", "fiscal"],
 }

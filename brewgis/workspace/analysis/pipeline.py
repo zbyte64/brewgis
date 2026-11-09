@@ -284,32 +284,14 @@ def run_modules_sync(
             "completed": list[str] — modules that succeeded
     """
     ordered = resolve_module_order(modules)
-    selects = [
-        module_registry.model_fqn(model_name, scenario_id)
-        for module in ordered
-        for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
-    ]
-    # quarter_mile_context is named while the selection is still the module
-    # models alone, because — unlike the inputs added below — it *is* restated:
-    # it buffers the scenario's own end state, so a rerun has to recompute it.
-    if "mode_choice" in ordered:
-        selects += _quarter_mile_context_input(scenario_id)
-    # trip_lengths is the trip-length source ``vmt`` reads, named here for the
-    # same reason as quarter_mile_context — and restated with the run, because it
-    # derives from the scenario's own trip distribution and end state.
-    # ``physical_activity`` is deliberately absent: it measures walking and
-    # cycling trips, which carry their own mean distance rather than the
-    # region's vehicle trip length.
-    if "vmt" in ordered:
-        selects += _trip_length_input(scenario_id)
-    # Computed before the workspace inputs join the selection: those are never
-    # restated (see ``_workspace_inputs``).
-    restate = model_fqns_built_in("prod", selects) or None
-    selects += _workspace_inputs(
+    selects, inputs = plan_selection(
         ordered,
         scenario_id=scenario_id,
         workspace_schema=_workspace_schema(workspace_id),
     )
+    # Computed before the inputs join the selection: those are never restated.
+    restate = model_fqns_built_in("prod", selects) or None
+    selects += inputs
 
     # The scenario's parameters — like its painted canvas — are baked into these models' blueprints when they are
     # *rendered*, and SQLMesh caches rendered model definitions on disk keyed by
@@ -385,6 +367,77 @@ def run_modules_sync(
         "results": [],
         "fqtns": fqtns,
     }
+
+
+def plan_selection(
+    ordered_modules: list[str], *, scenario_id: int, workspace_schema: str
+) -> tuple[list[str], list[str]]:
+    """The selectors a run of *ordered_modules* plans, as ``(scenario models, inputs)``.
+
+    The scenario models are restated when already built — they derive from
+    the scenario's own end state, which a rerun is expected to have changed.
+    The inputs are the workspace's (``_workspace_inputs``) and the project's
+    shared reference models (``_project_inputs``): selected, never restated.
+
+    Together they must cover every model upstream of the selection except the
+    workspace's base layer, which adopting it builds
+    (``services.workspace_base.adopt_base_table``): a model is only planned when
+    a selector names it, and a dependency nothing ever built leaves the reading
+    model to fail on a missing relation the first time a fresh server runs it.
+    """
+    selects = [
+        module_registry.model_fqn(model_name, scenario_id)
+        for module in ordered_modules
+        for model_name in MODULE_SQLMESH_SELECTORS.get(module, [])
+    ]
+    # quarter_mile_context is named with the module models, because — unlike
+    # the inputs — it *is* restated: it buffers the scenario's own end state,
+    # so a rerun has to recompute it.
+    if "mode_choice" in ordered_modules:
+        selects += _quarter_mile_context_input(scenario_id)
+    # trip_lengths is the trip-length source ``vmt`` reads, named here for the
+    # same reason as quarter_mile_context — and restated with the run, because it
+    # derives from the scenario's own trip distribution and end state.
+    # ``physical_activity`` is deliberately absent: it measures walking and
+    # cycling trips, which carry their own mean distance rather than the
+    # region's vehicle trip length.
+    if "vmt" in ordered_modules:
+        selects += _trip_length_input(scenario_id)
+    inputs = _workspace_inputs(
+        ordered_modules, scenario_id=scenario_id, workspace_schema=workspace_schema
+    ) + _project_inputs(ordered_modules)
+    return selects, inputs
+
+
+def _project_inputs(ordered_modules: list[str]) -> list[str]:
+    """The project's shared reference models the requested modules read.
+
+    Statewide models every workspace shares, not the output of any
+    workspace's construction: a server that never ran a construction pipeline
+    (an install that only imports workspace packages) has built none of them,
+    so a run that does not name them dies on ``schema "california" does not
+    exist``. Each is named with SQLMesh's ``+`` upstream selector, so its
+    bridge and staging are planned with it, and — like the workspace inputs —
+    is never restated: built once per server, a no-op in every later plan.
+
+    - ``core`` — the CEC building / forecasting climate zones and CIMIS ETo
+      zones ``core_end_state`` assigns each parcel;
+    - ``energy_demand`` — the CEC residential and commercial baselines it
+      keys on those zones.
+    """
+    inputs: list[str] = []
+    if "core" in ordered_modules:
+        inputs += [
+            "+brewgis.california.building_climate_zones",
+            "+brewgis.california.forecasting_climate_zones",
+            "+brewgis.california.eto_zones",
+        ]
+    if "energy_demand" in ordered_modules:
+        inputs += [
+            "brewgis.seeds.residential_energy_baseline",
+            "brewgis.seeds.commercial_energy_baseline",
+        ]
+    return inputs
 
 
 def _workspace_inputs(
