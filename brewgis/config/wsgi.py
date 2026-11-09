@@ -47,7 +47,10 @@ application = ProxyMiddleware(
         "/martin/": {
             "target": settings.TILE_SERVER_MARTIN_URL + "/",
             "remove_prefix": True,
-            "host": "localhost:8000",
+            # None forwards the browser's own Host header: Martin builds the
+            # tile URLs in its TileJSON from it, so a fixed host would send
+            # every visitor's tile requests to that host instead of this site.
+            "host": None,
         },
     },
 )
