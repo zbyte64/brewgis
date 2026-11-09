@@ -96,18 +96,24 @@ const mockPopup = {
   addTo: vi.fn().mockReturnThis(),
   remove: vi.fn(),
 }
-const mockPopupCtor = vi.fn(() => mockPopup)
+const mockPopupCtor = vi.fn(function () {
+  return mockPopup
+})
 
 vi.mock('maplibre-gl', () => ({
   default: {
-    Map: vi.fn(() => mockMap),
+    Map: vi.fn(function () {
+      return mockMap
+    }),
     NavigationControl: mockNavControl,
     ScaleControl: mockScaleControl,
     AttributionControl: mockAttributionControl,
     Popup: mockPopupCtor,
     MapLibreGL: { setRTLTextPlugin: vi.fn() },
   },
-  Map: vi.fn(() => mockMap),
+  Map: vi.fn(function () {
+    return mockMap
+  }),
   NavigationControl: mockNavControl,
   ScaleControl: mockScaleControl,
   AttributionControl: mockAttributionControl,
@@ -115,7 +121,9 @@ vi.mock('maplibre-gl', () => ({
 }))
 
 vi.mock('maplibre-gl-draw', () => ({
-  default: vi.fn(() => mockDrawInstance),
+  default: vi.fn(function () {
+    return mockDrawInstance
+  }),
 }))
 
 export { mockMap, mockDrawInstance, mockPopup, triggerMockEvent }
