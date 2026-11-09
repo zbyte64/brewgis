@@ -290,6 +290,7 @@ cache/
 # Vite build artifacts
 brewgis/static/js/brew-gis-map.js
 brewgis/static/js/brew-gis-map.js.map
+brewgis/static/js/maplibre-gl-worker.mjs
 .cache/
 
 # JupySQL notebooks — track source, ignore output cells

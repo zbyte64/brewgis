@@ -1,8 +1,19 @@
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import MapboxDraw from 'maplibre-gl-draw'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import centroid from '@turf/centroid'
 import type { FeatureSelectedEvent } from '../types/index.js'
+
+type DrawListener = (e: { features: GeoJSON.Feature[] }) => void
+
+/**
+ * MapboxDraw fires its `draw.*` events on the map, but MapLibre's typings
+ * only accept MapLibre's own event names.
+ */
+interface DrawEvents {
+  on(type: `draw.${string}`, listener: DrawListener): unknown
+  off(type: `draw.${string}`, listener: DrawListener): unknown
+}
 
 /**
  * Manages feature selection for paint mode.
@@ -33,6 +44,10 @@ export class PaintModeController {
   constructor(map: maplibregl.Map, host: HTMLElement) {
     this._map = map
     this._host = host
+  }
+
+  private get _drawEvents(): DrawEvents {
+    return this._map
   }
 
   get isActive(): boolean {
@@ -274,10 +289,10 @@ export class PaintModeController {
     // reads as "not supported here" rather than silently panning.
     this._map.dragPan.disable()
 
-    this._map.on('draw.create', this._handleDrawCreate)
-    this._map.on('draw.delete', this._handleDrawDelete)
-    this._map.on('draw.update', this._handleDrawUpdate)
-    this._map.on('draw.selectionchange', this._handleSelectionChange)
+    this._drawEvents.on('draw.create', this._handleDrawCreate)
+    this._drawEvents.on('draw.delete', this._handleDrawDelete)
+    this._drawEvents.on('draw.update', this._handleDrawUpdate)
+    this._drawEvents.on('draw.selectionchange', this._handleSelectionChange)
   }
 
   private _removeDraw(): void {
@@ -287,10 +302,10 @@ export class PaintModeController {
       this._map.removeControl(this._draw as any)
       this._draw = null
     }
-    this._map.off('draw.create', this._handleDrawCreate)
-    this._map.off('draw.delete', this._handleDrawDelete)
-    this._map.off('draw.update', this._handleDrawUpdate)
-    this._map.off('draw.selectionchange', this._handleSelectionChange)
+    this._drawEvents.off('draw.create', this._handleDrawCreate)
+    this._drawEvents.off('draw.delete', this._handleDrawDelete)
+    this._drawEvents.off('draw.update', this._handleDrawUpdate)
+    this._drawEvents.off('draw.selectionchange', this._handleSelectionChange)
   }
 
   private _handleDrawCreate = (e: { features: GeoJSON.Feature[] }): void => {
@@ -414,8 +429,8 @@ export class PaintModeController {
   private _resolveFeatureIds(features: maplibregl.MapGeoJSONFeature[]): { id: string }[] {
     const ids: { id: string }[] = []
     for (const f of features) {
-      const id = f.id ?? (f.properties && (f.properties as Record<string, unknown>).parcel_id)
-      if (id != null) ids.push({ id: String(id) })
+      const id: unknown = f.id ?? (f.properties as Record<string, unknown> | null)?.parcel_id
+      if (typeof id === 'string' || typeof id === 'number') ids.push({ id: String(id) })
     }
     return ids
   }

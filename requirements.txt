@@ -63,7 +63,7 @@ fastapi>=0.115.0  # https://github.com/fastapi/fastapi — required by SQLMesh U
 basedpyright>=1.39  # https://github.com/DetachHead/basedpyright — fast type checker (replaces mypy)
 django-stubs==6.1.1  # https://github.com/typeddjango/django-stubs — stubs consumed by basedpyright
 pandas-stubs==2.2.3.241009  # https://github.com/pandas-dev/pandas-stubs
-pytest==8.3.3  # https://github.com/pytest-dev/pytest
+pytest==9.2.0  # https://github.com/pytest-dev/pytest
 pytest-sugar==1.0.0  # https://github.com/Frozenball/pytest-sugar
 deal>=4.24  # https://github.com/life4/deal
 pytest-timeout>=2.3.0  # https://github.com/pytest-dev/pytest-timeout
@@ -95,8 +95,8 @@ django-debug-toolbar==6.2.0  # https://github.com/jazzband/django-debug-toolbar
 django-coverage-plugin==3.1.0  # https://github.com/nedbat/django_coverage_plugin
 pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
 pytest-asyncio==1.3.0  # https://github.com/pytest-dev/pytest-asyncio — Channels consumer tests
-pytest-bdd==8.1.0  # https://github.com/pytest-dev/pytest-bdd
-pytest-playwright==0.7.0  # https://github.com/microsoft/pytest-playwright
+pytest-bdd==9.0.1  # https://github.com/pytest-dev/pytest-bdd
+pytest-playwright==0.7.2  # https://github.com/microsoft/pytest-playwright
 playwright==1.55.0  # https://github.com/microsoft/playwright-python
 
 # Interactive analysis

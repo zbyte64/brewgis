@@ -1,6 +1,6 @@
 import { LitElement, html, type PropertyValues } from 'lit'
 import { property } from 'lit/decorators.js'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import type {
   Viewport,
   LayerConfig,
@@ -21,6 +21,11 @@ const FOCUS_MAX_ZOOM = 18
 /** Quiet period, in ms, that collapses a burst of `layers.changed` events
  * (a bulk import saves many layers) into one layer-list fetch. */
 const LAYERS_RELOAD_DEBOUNCE_MS = 150
+
+/** Paint/layout property names MapLibre accepts. Layer configs come from the
+ * server as plain JSON, so their names and values are only checked at runtime. */
+type PaintPropertyName = Parameters<maplibregl.Map['setPaintProperty']>[1]
+type LayoutPropertyName = Parameters<maplibregl.Map['setLayoutProperty']>[1]
 
 /** Structural equality for JSON-shaped layer config values. */
 function _sameJson(a: unknown, b: unknown): boolean {
@@ -267,7 +272,7 @@ export class BrewGisMap extends LitElement {
     if (!this._map) return
     for (const [key, value] of Object.entries(paintProperties)) {
       try {
-        this._map.setPaintProperty(layerId, key, value)
+        this._map.setPaintProperty(layerId, key as PaintPropertyName, value as never)
       } catch {
         // Layer may not exist yet
       }
@@ -288,9 +293,9 @@ export class BrewGisMap extends LitElement {
     if (!this._map) return
 
     const sourceId = 'brew-gis-paint-preview'
-    const source = this._map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+    const source = this._map.getSource<maplibregl.GeoJSONSource>(sourceId)
     if (source) {
-      source.setData(geojson)
+      void source.setData(geojson)
       return
     }
 
@@ -452,10 +457,8 @@ export class BrewGisMap extends LitElement {
       })
     }
 
-    // Cast: `getSource` is typed as the whole `Source` union, which has no
-    // `setData` — same as showPaintPreview below.
-    const source = this._map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
-    source?.setData({
+    const source = this._map.getSource<maplibregl.GeoJSONSource>(sourceId)
+    void source?.setData({
       type: 'FeatureCollection',
       features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [],
     })
@@ -467,10 +470,8 @@ export class BrewGisMap extends LitElement {
    */
   clearLocatedFeature(): void {
     this._locatedGeometry = null
-    const source = this._map?.getSource('brew-gis-locate-highlight') as
-      | maplibregl.GeoJSONSource
-      | undefined
-    source?.setData({ type: 'FeatureCollection', features: [] })
+    const source = this._map?.getSource<maplibregl.GeoJSONSource>('brew-gis-locate-highlight')
+    void source?.setData({ type: 'FeatureCollection', features: [] })
   }
 
   /**
@@ -722,7 +723,7 @@ export class BrewGisMap extends LitElement {
       // getCanvas()/toDataURL() from a button click, not from inside a
       // render callback — without this, the drawing buffer is typically
       // already cleared by then and the capture comes out blank.
-      preserveDrawingBuffer: true,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     }
 
     if (this.transformRequest) {
@@ -808,7 +809,7 @@ export class BrewGisMap extends LitElement {
             zoom: map.getZoom(),
             pitch: map.getPitch(),
             bearing: map.getBearing(),
-            bounds: map.getBounds().toArray() as [[number, number], [number, number]],
+            bounds: map.getBounds().toArray(),
           },
           bubbles: true,
           composed: true,
@@ -1274,7 +1275,7 @@ export class BrewGisMap extends LitElement {
     const map = this._map
 
     if (!_sameJson(previous.source, next.source)) {
-      const source = map.getSource(id) as maplibregl.VectorTileSource | undefined
+      const source = map.getSource<maplibregl.VectorTileSource>(id)
       const sameKind =
         source && previous.source.type === next.source.type && previous.source.type === 'vector'
       if (sameKind && next.source.tiles && typeof source.setTiles === 'function') {
@@ -1303,8 +1304,9 @@ export class BrewGisMap extends LitElement {
     ] as const) {
       for (const name of new Set([...Object.keys(prev), ...Object.keys(nextProps)])) {
         if (_sameJson(prev[name], nextProps[name])) continue
-        if (kind === 'paint') map.setPaintProperty(id, name, nextProps[name])
-        else map.setLayoutProperty(id, name, nextProps[name])
+        if (kind === 'paint')
+          map.setPaintProperty(id, name as PaintPropertyName, nextProps[name] as never)
+        else map.setLayoutProperty(id, name as LayoutPropertyName, nextProps[name] as never)
       }
     }
 

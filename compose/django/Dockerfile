@@ -144,11 +144,13 @@ RUN chmod +x /start-sqlmesh-ui
 # copy application code to WORKDIR
 COPY . ${APP_HOME}
 
-# The map bundle from the frontend stage, plus its sourcemap. Kept outside
-# APP_HOME — see the stage above.
+# The map bundle from the frontend stage, its sourcemap, and the MapLibre
+# worker it loads from its own directory. Kept outside APP_HOME — see the
+# stage above.
 COPY --from=frontend-build-stage \
   /src/brewgis/static/js/brew-gis-map.js \
   /src/brewgis/static/js/brew-gis-map.js.map \
+  /src/brewgis/static/js/maplibre-gl-worker.mjs \
   /opt/brewgis-frontend/js/
 
 # Pre-download DuckDB extensions so INSTALL is a no-op at runtime. The httpfs
