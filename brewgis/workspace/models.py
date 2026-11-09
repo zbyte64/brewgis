@@ -248,8 +248,11 @@ class Layer(models.Model):
         # Group first (ungrouped layers sort last, after all named groups),
         # then each group's own display_order — so `{% regroup %}` in the
         # layer panel template sees same-group layers as one contiguous run
-        # instead of interleaved with other groups' layers.
-        ordering = ("group__display_order", "group__name", "display_order")
+        # instead of interleaved with other groups' layers. `pk` breaks
+        # display_order ties (every layer starts at 0): without it Postgres
+        # returns tied rows in heap order, which any UPDATE — a visibility
+        # toggle — reshuffles, reordering the panel and the map's stack.
+        ordering = ("group__display_order", "group__name", "display_order", "pk")
         unique_together = [("workspace", "key")]
 
     def __str__(self) -> str:

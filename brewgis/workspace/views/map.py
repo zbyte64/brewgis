@@ -584,7 +584,9 @@ def view_public_scenario_map(request: HttpRequest, token: str) -> HttpResponse:
     )
     workspace = scenario.workspace
 
-    layers = visible_layers_for_panel(workspace, scenario).order_by("display_order")
+    layers = visible_layers_for_panel(workspace, scenario).order_by(
+        "display_order", "pk"
+    )
 
     layer_data = []
     for layer in layers:

@@ -44,9 +44,9 @@ def _list_context(workspace: Workspace, scenario: Scenario) -> dict[str, Any]:
         .prefetch_related(
             Prefetch("layers", queryset=visible, to_attr="visible_layers")
         )
-        .order_by("display_order")
+        .order_by("display_order", "name")
     )
-    ungrouped = visible.filter(group__isnull=True).order_by("display_order")
+    ungrouped = visible.filter(group__isnull=True).order_by("display_order", "pk")
     sqlmesh_links = sqlmesh_links_for_tables(
         {
             layer.pk: (layer.db_schema or workspace.db_schema, layer.db_table)

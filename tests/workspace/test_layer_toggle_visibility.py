@@ -7,9 +7,11 @@ Covers auth guard, method guard, toggling, and 404 handling.
 from __future__ import annotations
 
 import pytest
+from django.db import connection
 from django.shortcuts import reverse
 from django.test import TestCase
 
+from brewgis.workspace.analysis.layer_registry import visible_layers_for_panel
 from tests.factories import LayerFactory
 from tests.factories import UserFactory
 from tests.factories import WorkspaceFactory
@@ -76,3 +78,33 @@ class TestLayerToggleVisibilityView(TestCase):
         other_layer.refresh_from_db()
         assert self.layer.is_visible is False
         assert other_layer.is_visible is True
+
+    def test_tied_layers_keep_creation_order_across_toggles(self):
+        """Layers tied on display_order list in creation order, toggle or not.
+
+        Every layer starts at display_order 0. Left to Postgres, tied rows come
+        back in the order the plan reads them; a seq scan — what the planner
+        picks for a real workspace's layer table — reads heap order, which the
+        toggle's UPDATE changes, so the panel and the map's stack reshuffled on
+        the reload a toggle triggers. Index scans are switched off to get that
+        plan on the test DB's near-empty table.
+        """
+        self.client.force_login(self.user)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off"
+            )
+        workspace = WorkspaceFactory()
+        created = [
+            LayerFactory(workspace=workspace, display_order=0).pk for _ in range(4)
+        ]
+
+        def panel_order() -> list[int]:
+            return list(
+                visible_layers_for_panel(workspace).values_list("pk", flat=True)
+            )
+
+        assert panel_order() == created
+        for pk in created[:2]:
+            self.client.post(self._toggle_url(pk))
+            assert panel_order() == created
