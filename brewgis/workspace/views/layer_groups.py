@@ -9,6 +9,7 @@ from typing import Any
 from django.contrib.auth.decorators import user_passes_test
 from django.db.models import Max
 from django.db.models import Prefetch
+from django.http import Http404
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -24,6 +25,7 @@ from brewgis.workspace.models import LayerGroup
 from brewgis.workspace.models import Scenario
 from brewgis.workspace.models import SymbologyConfig
 from brewgis.workspace.models import Workspace
+from brewgis.workspace.services.map_events import notify_map
 from brewgis.workspace.services.sqlmesh_tables import sqlmesh_links_for_tables
 from brewgis.workspace.symbology.legend import swatch_background
 from brewgis.workspace.views.panels import resolve_scenario_param
@@ -137,6 +139,33 @@ def layer_group_delete(request: HttpRequest, pk: int) -> HttpResponse:
     return render(request, "workspace/partials/_layer_group_list.html", context)
 
 
+def _move_layer_to(layer: Layer, target: Layer, scenario: Scenario) -> None:
+    """Put *layer* where *target* sits in *scenario*'s Layers panel.
+
+    Dragged down, the layer lands just after *target*; dragged up, just
+    before it. The panel lists layers by group and then display_order, so the
+    layer joins *target*'s group — otherwise a drop across groups would put
+    it back in its own — and every layer in the panel is renumbered in its
+    new order. Swapping the two layers' display_order instead moved nothing
+    while they tied, which every layer does until it is first reordered.
+    One bulk write, so the map and panel reload once for the whole move.
+    """
+    panel = list(visible_layers_for_panel(layer.workspace, scenario))
+    pks = [lyr.pk for lyr in panel]
+    if layer.pk not in pks or target.pk not in pks:
+        msg = "Both layers must be in the scenario's Layers panel."
+        raise Http404(msg)
+    moved = panel[pks.index(layer.pk)]
+    moved.group_id = target.group_id
+    ordered = [lyr for lyr in panel if lyr.pk != layer.pk]
+    ordered.insert(pks.index(target.pk), moved)
+    for display_order, lyr in enumerate(ordered):
+        lyr.display_order = display_order
+    # bulk_update skips post_save, which is what announces a saved layer.
+    Layer.objects.bulk_update(ordered, ["display_order", "group"])
+    notify_map(workspace_id=layer.workspace_id, kind="layers.changed")
+
+
 @user_passes_test(lambda u: u.is_authenticated)
 @require_POST
 def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
@@ -144,7 +173,8 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
 
     POST params:
       - group_id: move layer into this group (existing behavior)
-      - target_layer_pk: swap display_order with another layer (reorder)
+      - target_layer_pk: move the layer to that layer's place in the Layers
+        panel (drag-and-drop reorder, see ``_move_layer_to``)
     """
     layer = get_object_or_404(Layer, pk=layer_pk)
     target_pk = request.POST.get("target_layer_pk", "")
@@ -152,14 +182,8 @@ def layer_group_move_layer(request: HttpRequest, layer_pk: int) -> HttpResponse:
     scenario = resolve_scenario_param(request, layer.workspace)
 
     if target_pk:
-        # Reorder: swap display_order with target layer
-        target = get_object_or_404(Layer, pk=target_pk)
-        layer.display_order, target.display_order = (
-            target.display_order,
-            layer.display_order,
-        )
-        layer.save()
-        target.save()
+        target = get_object_or_404(Layer, pk=target_pk, workspace=layer.workspace)
+        _move_layer_to(layer, target, scenario)
 
         # Build swatch backgrounds for the layer list panel
         workspace = layer.workspace

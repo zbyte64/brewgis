@@ -1359,9 +1359,15 @@
         var tgtPk = target.getAttribute('data-layer-pk');
         if (!srcPk || !tgtPk) return;
 
-        htmx.ajax('POST', '/layers/' + srcPk + '/move-group/', {
+        // The scenario picks the panel the move is made in (and re-rendered
+        // for), as for every panel load (panel-manager.js:loadSidebarPanel).
+        // The response is the whole panel partial, so only its list is swapped.
+        var scenarioId = document.querySelector('brew-gis-map')?.getAttribute('scenario-id');
+        var query = scenarioId ? '?scenario=' + encodeURIComponent(scenarioId) : '';
+        htmx.ajax('POST', '/layers/' + srcPk + '/move-group/' + query, {
           target: '#legend-list',
           swap: 'outerHTML',
+          select: '#legend-list',
           values: {
             target_layer_pk: tgtPk
           }
