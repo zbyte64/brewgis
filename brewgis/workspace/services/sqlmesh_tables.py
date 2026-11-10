@@ -18,6 +18,7 @@ from typing import Any
 
 from django.db import connection
 
+from brewgis.config.sqlmesh_ui_proxy import SQLMESH_UI_PREFIX
 from brewgis.sqlmesh.model_names import MODEL_SCHEMA_PREFIX
 from brewgis.sqlmesh.model_names import RESULT_SCHEMA_PREFIX
 from brewgis.workspace.models import LayerFilter
@@ -74,7 +75,7 @@ SQLMESH_PROJECT_NAME = "brewgis"
 
 
 def sqlmesh_model_ui_url(schema: str, table: str) -> str:
-    """Deep link to a model's page in the ``sqlmesh ui`` data catalog.
+    """Deep link to a model's page in the SQLMesh UI Django serves at ``/sqlmesh/``.
 
     *schema* is the schema the *table* is read from, which is not always the
     schema of the model behind it: a scenario's analysis result views are
@@ -83,10 +84,8 @@ def sqlmesh_model_ui_url(schema: str, table: str) -> str:
     keeps every caller — the layer panel, the symbology editor and the import
     picker alike — pointing at a model the UI actually has.
     """
-    from django.conf import settings
-
     return (
-        f"{settings.SQLMESH_UI_URL}/data-catalog/models/"
+        f"{SQLMESH_UI_PREFIX}/data-catalog/models/"
         f"{SQLMESH_PROJECT_NAME}.{_model_schema(schema)}.{table}"
     )
 

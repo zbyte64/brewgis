@@ -43,6 +43,7 @@ dependencies = [
     "geoalchemy2==0.20.0",
     "geopandas[all]==1.1.2",
     "hiredis==3.0.0",
+    "httpx==0.28.1",
     "hypothesis>=6.100",
     "ipdb==0.13.13",
     "jupysql>=0.10,<1.0",

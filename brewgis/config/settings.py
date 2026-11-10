@@ -385,9 +385,16 @@ MAX_WORKSPACE_PACKAGE_SIZE = env.int(
 
 DATA_DOWNLOAD_CACHE_DIR = BASE_DIR / "planning"
 
-# Base URL of the `sqlmesh ui` web server (see compose/django/start-sqlmesh-ui),
-# used to link out to table/model details from the sqlmesh import pickers.
-SQLMESH_UI_URL = env("SQLMESH_UI_URL", default="http://localhost:8001")
+# The `sqlmesh ui` web server (compose/django/start-sqlmesh-ui). Django serves it
+# to logged-in users at /sqlmesh/ (brewgis/config/sqlmesh_ui_proxy.py); this is
+# the upstream that proxy forwards to.
+SQLMESH_UI_UPSTREAM_URL = env(
+    "SQLMESH_UI_UPSTREAM_URL", default="http://sqlmesh-ui:8001"
+)
+# Mode `sqlmesh ui` runs in (the start script reads the same variable). The UI
+# mounts every API endpoint in every mode, so for "catalog"/"docs" the proxy
+# itself refuses anything that could write or run SQL.
+SQLMESH_UI_MODE = env("SQLMESH_UI_MODE", default="ide")
 
 
 # ==============================================================================
