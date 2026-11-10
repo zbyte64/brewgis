@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-import pytest
 from asgiref.wsgi import WsgiToAsgi
 
 from brewgis.config import asgi
@@ -53,8 +53,7 @@ async def _get(path: str) -> bytes:
     )
 
 
-@pytest.mark.asyncio
-async def test_a_slow_request_does_not_hold_up_others(monkeypatch) -> None:
+def test_a_slow_request_does_not_hold_up_others(monkeypatch) -> None:
     slow_started = threading.Event()
     release_slow = threading.Event()
 
@@ -67,14 +66,20 @@ async def test_a_slow_request_does_not_hold_up_others(monkeypatch) -> None:
 
     monkeypatch.setattr(asgi, "_wsgi_http", WsgiToAsgi(wsgi_app))
 
-    slow = asyncio.create_task(_get("/slow"))
-    try:
-        # The slow request holds its thread before the fast one is sent.
-        assert await asyncio.to_thread(slow_started.wait, 5)
-        fast = await asyncio.wait_for(_get("/fast"), timeout=5)
-        assert not slow.done()
-    finally:
-        release_slow.set()
-    await asyncio.wait_for(slow, timeout=5)
+    async def scenario() -> None:
+        slow = asyncio.create_task(_get("/slow"))
+        try:
+            # The slow request holds its thread before the fast one is sent.
+            assert await asyncio.to_thread(slow_started.wait, 5)
+            fast = await asyncio.wait_for(_get("/fast"), timeout=5)
+            assert not slow.done()
+        finally:
+            release_slow.set()
+        await asyncio.wait_for(slow, timeout=5)
+        assert fast == b"/fast"
 
-    assert fast == b"/fast"
+    # A fresh thread gets its own event loop. The test thread can't host one:
+    # the Playwright sync API in tests/review leaves a loop marked as running
+    # there, and asyncio.run refuses to start inside it.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(asyncio.run, scenario()).result(timeout=30)
