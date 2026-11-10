@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 
 {% load i18n %}
-
 {% load static %}
 
 {% block bodyclass %}
@@ -19,8 +18,13 @@
   <div class="d-flex justify-content-center h-100 py-4">
     <div class="col-md-4 py-4 my-4 px-4">
       <div class="text-center mb-4">
-        <a class="navbar-brand d-flex justify-content-center align-items-center" href="{% url 'workspace:home' %}">
-          <img src="{% static 'images/brand/brewgis-mark.svg' %}" alt="" width="40" height="40" class="me-2" />
+        <a class="navbar-brand d-flex justify-content-center align-items-center"
+           href="{% url 'workspace:home' %}">
+          <img src="{% static 'images/brand/brewgis-mark.svg' %}"
+               alt=""
+               width="40"
+               height="40"
+               class="me-2" />
           Brew GIS
         </a>
       </div>
