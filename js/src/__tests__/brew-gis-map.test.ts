@@ -621,10 +621,13 @@ describe('brew-gis-map', () => {
         sources[id] = { tiles: spec.tiles, setTiles: vi.fn() }
       })
       mockMap.getSource.mockImplementation((id: string) => sources[id] ?? null)
-      mockMap.addLayer.mockImplementation((spec: { id: string }) => layerIds.push(spec.id))
+      mockMap.addLayer.mockImplementation((spec: { id: string }, before?: string) => {
+        layerIds.splice(before ? layerIds.indexOf(before) : layerIds.length, 0, spec.id)
+      })
       mockMap.getLayer.mockImplementation((id: string) => (layerIds.includes(id) ? {} : null))
       mockMap.getStyle.mockImplementation(() => ({ layers: layerIds.map((id) => ({ id })) }))
       mockMap.moveLayer.mockImplementation((id: string, before?: string) => {
+        if (id === before) return // MapLibre ignores a move before itself
         layerIds.splice(layerIds.indexOf(id), 1)
         layerIds.splice(before ? layerIds.indexOf(before) : layerIds.length, 0, id)
       })
@@ -689,6 +692,23 @@ describe('brew-gis-map', () => {
 
       expect(layerIds).toEqual(['b', 'a'])
       expect(mockMap.addLayer).toHaveBeenCalledTimes(2)
+    })
+
+    it('restacks below the basemap, even past a data layer named like a basemap one', async () => {
+      // `building_water_ghg_1` matches the basemap patterns ("building",
+      // "water"); the insertion point is still the basemap's water layer.
+      const { layerIds } = trackStyle()
+      layerIds.push('background', 'water')
+      const names = ['a', 'building_water_ghg_1', 'c']
+      const { el } = await createAndAttach({ layers: names.map((n) => vectorLayer(n)) })
+      expect(layerIds).toEqual(['background', 'a', 'building_water_ghg_1', 'c', 'water'])
+
+      await setLayers(
+        el,
+        ['building_water_ghg_1', 'c', 'a'].map((n) => vectorLayer(n)),
+      )
+
+      expect(layerIds).toEqual(['background', 'building_water_ghg_1', 'c', 'a', 'water'])
     })
   })
 

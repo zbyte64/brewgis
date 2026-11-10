@@ -119,6 +119,9 @@ export class BrewGisMap extends LitElement {
   /** Tracks the last applied layers for diffing. */
   private _previousLayers: LayerConfig[] = []
 
+  /** Map ids of the data layers the last sync drew from `layers`. */
+  private _dataLayerIds = new Set<string>()
+
   /** Tracks whether map is loaded. */
   private _mapLoaded = false
 
@@ -678,10 +681,13 @@ export class BrewGisMap extends LitElement {
    * Find a good insertion point for data layers so they render
    * below water and roads in vector basemaps.
    *
-   * Scans the current style for the first layer whose ID matches
+   * Scans the current style for the first basemap layer whose ID matches
    * water/road/building patterns. Returns undefined if no suitable
    * layer is found (data layers go on top — correct for raster
-   * basemaps).
+   * basemaps). The component's own layers are skipped: a data layer is
+   * named after its key, and a key like `building_water_ghg_1` or
+   * `stormwater_runoff_1` matches the patterns too — returning it made a
+   * reorder stack every other layer below it, leaving it on top.
    */
   private _findBeforeId(): string | undefined {
     if (!this._map) return undefined
@@ -694,6 +700,7 @@ export class BrewGisMap extends LitElement {
     const beforePatterns = ['water', 'road', 'building', 'poi', 'label']
 
     for (const layer of layers) {
+      if (this._dataLayerIds.has(layer.id) || layer.id.startsWith('brew-gis-')) continue
       const id = layer.id.toLowerCase()
       // Skip background and land layers — data should sit above them
       if (id === 'background' || id.startsWith('land')) continue
@@ -1242,6 +1249,7 @@ export class BrewGisMap extends LitElement {
     this._restackDataLayers(resolvedIds, beforeId)
 
     this._previousLayers = [...this.layers]
+    this._dataLayerIds = new Set(resolvedIds)
 
     // Idempotent — no-ops once already added, and no-ops until a base/canvas
     // layer is actually resolvable. Added here (rather than only in
@@ -1358,6 +1366,7 @@ export class BrewGisMap extends LitElement {
       this._map = null
       this._mapLoaded = false
       this._previousLayers = []
+      this._dataLayerIds = new Set()
     }
   }
 }
