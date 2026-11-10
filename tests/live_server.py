@@ -36,9 +36,9 @@ class _InFlightCounter:
     """ASGI wrapper counting the HTTP requests the server has not finished.
 
     Counted from the moment Daphne hands a request over, including while it
-    queues for the one thread every WSGI request runs on, and while it runs
-    middleware outside any database transaction — the windows in which the
-    request is invisible to ``pg_stat_activity``.
+    waits for its thread and while it runs middleware outside any database
+    transaction — the windows in which the request is invisible to
+    ``pg_stat_activity``.
     """
 
     def __init__(self, app: Callable[..., Awaitable[None]]) -> None:

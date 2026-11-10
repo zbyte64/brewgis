@@ -79,11 +79,10 @@ test-parallel:  ## Run tests in parallel (excludes slow and e2e, requires pytest
 
 .PHONY: test-e2e
 test-e2e:  ## Run end-to-end tests only (sequential, single worker)
-	# The map page fetches tiles through the app's /martin/ proxy, and the live
-	# server runs every WSGI request on one thread: with no `martin` container
-	# each proxied tile blocks on the failing DNS lookup, so pages never reach
-	# networkidle. Martin reads the dev database, so the tests' tiles are 404s —
-	# what matters is that they answer at once.
+	# The map page fetches tiles through the app's /martin/ proxy: with no
+	# `martin` container each proxied tile blocks on the failing DNS lookup, so
+	# pages never reach networkidle. Martin reads the dev database, so the
+	# tests' tiles are 404s — what matters is that they answer at once.
 	docker compose -f $(COMPOSE_FILE) up -d martin
 	$(COMPOSE_TEST_RUN) pytest tests/e2e/ -m e2e -n 0 --timeout=300
 .PHONY: test-review
