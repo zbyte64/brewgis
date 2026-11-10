@@ -15,7 +15,11 @@
     <meta name="csrf-token" content="{{ csrf_token }}" />
     <meta name="description" content="GIS Workspace" />
     <meta name="author" content="Jason Kraus" />
-    <link rel="icon" href="{% static 'images/favicons/favicon.ico' %}" />
+    <link rel="icon" type="image/svg+xml" href="{% static 'images/favicons/favicon.svg' %}" />
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicons/favicon-32x32.png' %}" />
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'images/favicons/favicon-16x16.png' %}" />
+    <link rel="alternate icon" href="{% static 'images/favicons/favicon.ico' %}" sizes="48x48" />
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/favicons/apple-touch-icon.png' %}" />
     {% block css %}
       <!-- Latest compiled and minified Bootstrap CSS -->
       <link rel="stylesheet"
@@ -68,7 +72,10 @@
                     aria-label="Toggle navigation">
               <span class="navbar-toggler-icon"></span>
             </button>
-            <a class="navbar-brand" href="{% url 'workspace:home' %}">Brew GIS</a>
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'workspace:home' %}">
+              <img src="{% static 'images/brand/brewgis-mark.svg' %}" alt="" width="28" height="28" class="me-2" />
+              Brew GIS
+            </a>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
               <ul class="navbar-nav mr-auto">
                 <li class="nav-item active">
