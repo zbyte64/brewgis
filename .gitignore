@@ -303,3 +303,13 @@ brewgis/gx/validation_results/
 # dlt secrets (local)
 .dlt/secrets.toml
 planning/fresno_demo/
+
+# Local production env files (hold credentials; never commit)
+/.envs/.production/
+
+# Root-level Python 3.10 virtualenv (created by `python -m venv .` at repo root)
+/bin/
+/include/
+/lib64
+/pyvenv.cfg
+/share/
