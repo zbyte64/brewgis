@@ -93,7 +93,7 @@ vulture>=2.16  # https://github.com/jendrikseipp/vulture — dead code detection
 factory-boy==3.3.1  # https://github.com/FactoryBoy/factory_boy
 
 django-debug-toolbar==6.2.0  # https://github.com/jazzband/django-debug-toolbar
-django-coverage-plugin==3.1.0  # https://github.com/nedbat/django_coverage_plugin
+django-coverage-plugin==3.2.2  # https://github.com/nedbat/django_coverage_plugin
 pytest-django==4.9.0  # https://github.com/pytest-dev/pytest-django
 pytest-asyncio==1.3.0  # https://github.com/pytest-dev/pytest-asyncio — Channels consumer tests
 pytest-bdd==9.0.1  # https://github.com/pytest-dev/pytest-bdd
