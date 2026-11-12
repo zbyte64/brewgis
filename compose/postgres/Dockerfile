@@ -1,4 +1,4 @@
-FROM postgis/postgis:18-3.6
+FROM postgis/postgis:18-3.7
 
 # Install pgRouting extension for PostgreSQL 18
 RUN apt-get update && apt-get install --no-install-recommends -y \
